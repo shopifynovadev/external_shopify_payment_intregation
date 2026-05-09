@@ -1,0 +1,90 @@
+{%- assign app_url = shop.metafields.nova_bkash.app_url.value -%}
+
+<div
+  id="nova-thankyou-block"
+  data-app-url="{{ app_url }}"
+  style="max-width:540px; margin:0 auto; padding:32px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+>
+  <!-- Loading state -->
+  <div id="nova-ty-loading" style="text-align:center; padding:40px;">
+    <div style="width:36px;height:36px;border:3px solid #f3f4f6;border-top-color:#E2136E;border-radius:50%;animation:nova-spin 0.8s linear infinite;margin:0 auto;"></div>
+    <p style="color:#6d7175; margin-top:12px;">Confirming your payment...</p>
+  </div>
+
+  <!-- Success state -->
+  <div id="nova-ty-success" style="display:none;">
+    <div style="text-align:center; margin-bottom:24px;">
+      <div style="width:64px;height:64px;background:#E2136E;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;">✓</div>
+      <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;">{{ block.settings.success_heading | default: "Payment Successful!" }}</h2>
+      <p style="color:#6d7175;margin:0;">{{ block.settings.success_message | default: "Thank you for your order." }}</p>
+    </div>
+
+    <div style="background:#f9fafb;border-radius:10px;padding:20px;font-size:14px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+        <span style="color:#6d7175;">Order Number</span>
+        <strong id="nova-order-number">—</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+        <span style="color:#6d7175;">bKash Transaction ID</span>
+        <strong id="nova-trx-id" style="font-family:monospace;font-size:12px;">—</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:#6d7175;">Status</span>
+        <span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:500;">Confirmed</span>
+      </div>
+    </div>
+
+    <p style="margin-top:16px;font-size:13px;color:#6d7175;text-align:center;">
+      {{ block.settings.delivery_message | default: "You will receive an email confirmation shortly." }}
+    </p>
+  </div>
+
+  <!-- Failed state -->
+  <div id="nova-ty-failed" style="display:none; text-align:center; padding:40px;">
+    <div style="width:64px;height:64px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;">✕</div>
+    <h2 style="color:#991b1b;margin:0 0 8px;font-size:20px;">Payment Not Completed</h2>
+    <p id="nova-ty-error-msg" style="color:#6d7175;margin:0 0 20px;"></p>
+    <a href="/cart" style="display:inline-block;padding:10px 20px;background:#E2136E;color:#fff;border-radius:6px;text-decoration:none;font-weight:500;">Return to Cart</a>
+  </div>
+
+  <!-- Timeout state -->
+  <div id="nova-ty-timeout" style="display:none; text-align:center; padding:40px;">
+    <h2 style="font-size:20px;margin:0 0 8px;">Taking Longer Than Expected</h2>
+    <p style="color:#6d7175;">Check your bKash app for the transaction confirmation. If payment was deducted, your order will be created shortly.</p>
+    <p style="font-size:13px;color:#6d7175;margin-top:12px;">Contact us if you need assistance.</p>
+  </div>
+</div>
+
+<style>
+  @keyframes nova-spin { to { transform: rotate(360deg); } }
+</style>
+
+<script src="{{ 'thankyou.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Nova bKash Thank You",
+  "target": "section",
+  "templates": ["page"],
+  "settings": [
+    {
+      "type": "text",
+      "id": "success_heading",
+      "label": "Success heading",
+      "default": "Payment Successful!"
+    },
+    {
+      "type": "text",
+      "id": "success_message",
+      "label": "Success message",
+      "default": "Thank you for your order."
+    },
+    {
+      "type": "text",
+      "id": "delivery_message",
+      "label": "Delivery message",
+      "default": "You will receive an email confirmation shortly."
+    }
+  ]
+}
+{% endschema %}

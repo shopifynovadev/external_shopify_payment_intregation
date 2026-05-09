@@ -1,0 +1,6 @@
+api_version = "2026-04"
+
+[[extensions]]
+type = "theme"
+name = "Nova bKash Cart Block"
+handle = "nova-cart-block"

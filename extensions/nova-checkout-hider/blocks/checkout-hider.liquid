@@ -1,0 +1,35 @@
+{% if block.settings.hide_checkout %}
+<style id="nova-checkout-hider">
+  /* Hide all paths that lead to Shopify native checkout */
+  .checkout-button,
+  [href*="/checkouts"],
+  [href="/checkout"],
+  form[action="/checkout"] button[type="submit"],
+  form[action="/checkout"] input[type="submit"],
+  input[name="checkout"],
+  button[name="checkout"],
+  #checkout,
+  .cart__checkout-button,
+  .cart-page__checkout,
+  a[href*="checkouts"] {
+    display: none !important;
+    pointer-events: none !important;
+  }
+</style>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Nova Checkout Hider",
+  "target": "body",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "hide_checkout",
+      "label": "Hide native checkout buttons",
+      "default": true,
+      "info": "Hides all Shopify checkout buttons store-wide so customers use bKash to pay."
+    }
+  ]
+}
+{% endschema %}

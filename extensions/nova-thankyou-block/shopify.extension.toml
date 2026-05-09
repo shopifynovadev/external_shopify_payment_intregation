@@ -1,0 +1,6 @@
+api_version = "2026-04"
+
+[[extensions]]
+type = "theme"
+name = "Nova bKash Thank You Block"
+handle = "nova-thankyou-block"

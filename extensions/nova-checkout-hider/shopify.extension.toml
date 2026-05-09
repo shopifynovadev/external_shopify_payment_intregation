@@ -1,0 +1,6 @@
+api_version = "2026-04"
+
+[[extensions]]
+type = "theme"
+name = "Nova Checkout Hider"
+handle = "nova-checkout-hider"
