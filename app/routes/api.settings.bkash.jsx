@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import { authenticate } from "../shopify.server.js";
 import prisma from "../db.server.js";
 import { decrypt } from "../utils/crypto.js";
@@ -30,7 +30,7 @@ export async function loader({ request }) {
   });
 
   // Return masked values — never return decrypted credentials to the frontend
-  return json({
+  return ({
     success: true,
     data: {
       bkashNumber: maskValue(settings?.bkashNumber),

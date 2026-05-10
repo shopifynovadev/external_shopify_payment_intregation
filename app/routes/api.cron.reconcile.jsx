@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import prisma from "../db.server.js";
 
 function authorized(request) {
@@ -128,7 +128,7 @@ async function reconcileMerchant(merchant, sinceDate) {
 
 export async function action({ request }) {
   if (!authorized(request)) {
-    return json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return ({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const yesterday = new Date();
@@ -141,7 +141,7 @@ export async function action({ request }) {
     merchants.map((m) => reconcileMerchant(m, sinceDate))
   );
 
-  return json({
+  return ({
     success: true,
     data: results.map((r) => (r.status === "fulfilled" ? r.value : { error: r.reason?.message })),
   });

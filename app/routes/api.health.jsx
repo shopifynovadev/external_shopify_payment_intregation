@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import prisma from "../db.server.js";
 import { paymentQueue, orderCreateQueue, refundQueue } from "../queues/index.js";
 
@@ -10,7 +10,7 @@ export async function loader() {
     dbStatus = "disconnected";
   }
 
-  return json({
+  return ({
     status: dbStatus === "connected" ? "ok" : "degraded",
     db: dbStatus,
     queues: {

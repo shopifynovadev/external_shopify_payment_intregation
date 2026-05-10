@@ -1,5 +1,5 @@
 import { useLoaderData } from "react-router";
-import { json } from "react-router";
+
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server.js";
@@ -14,7 +14,7 @@ export const loader = async ({ request }) => {
     orderBy: { periodStart: "desc" },
   });
 
-  return json({ invoices });
+  return ({ invoices });
 };
 
 export default function Billing() {

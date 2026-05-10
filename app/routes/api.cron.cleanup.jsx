@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import prisma from "../db.server.js";
 
 function authorized(request) {
@@ -8,7 +8,7 @@ function authorized(request) {
 
 export async function action({ request }) {
   if (!authorized(request)) {
-    return json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return ({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const result = await prisma.pendingPayment.updateMany({
@@ -19,5 +19,5 @@ export async function action({ request }) {
     data: { status: "ABANDONED" },
   });
 
-  return json({ success: true, data: { abandoned: result.count } });
+  return ({ success: true, data: { abandoned: result.count } });
 }

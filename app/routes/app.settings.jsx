@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useLoaderData, useFetcher } from "react-router";
-import { json } from "react-router";
+
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server.js";
@@ -38,7 +38,7 @@ export const loader = async ({ request }) => {
   const themes = themesJson.data?.themes?.nodes ?? [];
   const extensionId = process.env.SHOPIFY_EXTENSION_ID ?? "";
 
-  return json({
+  return ({
     credentials: {
       bkashNumber: maskValue(settings?.bkashNumber),
       bkashUsername: maskValue(settings?.bkashUsername),

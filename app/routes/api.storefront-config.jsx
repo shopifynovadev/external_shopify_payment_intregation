@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import prisma from "../db.server.js";
 import { CORS_HEADERS, corsPrelight } from "../utils/cors.js";
 
@@ -9,7 +9,7 @@ export async function loader({ request }) {
   const shop = url.searchParams.get("shop");
 
   if (!shop) {
-    return json({ success: false, error: "Missing shop" }, { status: 400, headers: CORS_HEADERS });
+    return ({ success: false, error: "Missing shop" }, { status: 400, headers: CORS_HEADERS });
   }
 
   const settings = await prisma.merchantSettings.findUnique({
@@ -18,10 +18,10 @@ export async function loader({ request }) {
   });
 
   if (!settings?.storefrontAccessToken) {
-    return json({ success: false, error: "Not configured" }, { status: 404, headers: CORS_HEADERS });
+    return ({ success: false, error: "Not configured" }, { status: 404, headers: CORS_HEADERS });
   }
 
-  return json(
+  return (
     {
       success: true,
       data: {

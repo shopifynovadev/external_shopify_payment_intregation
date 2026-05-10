@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import prisma from "../db.server.js";
 import { billingQueue } from "../queues/index.js";
 
@@ -63,7 +63,7 @@ async function generateInvoiceForMerchant(merchant) {
 
 export async function action({ request }) {
   if (!authorized(request)) {
-    return json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return ({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const merchants = await prisma.merchantSettings.findMany({ where: { isActive: true } });
@@ -78,5 +78,5 @@ export async function action({ request }) {
   const skipped = results.filter((r) => r.status === "fulfilled" && !r.value).length;
   const failed = results.filter((r) => r.status === "rejected").length;
 
-  return json({ success: true, data: { total: merchants.length, created, skipped, failed } });
+  return ({ success: true, data: { total: merchants.length, created, skipped, failed } });
 }

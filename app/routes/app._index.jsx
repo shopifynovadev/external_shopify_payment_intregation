@@ -1,5 +1,5 @@
 import { useLoaderData } from "react-router";
-import { json } from "react-router";
+
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server.js";
@@ -38,7 +38,7 @@ export const loader = async ({ request }) => {
   const monthlyGmv = monthlySummaries.reduce((s, r) => s + parseFloat(r.totalAmount), 0);
   const monthlyOrders = monthlySummaries.reduce((s, r) => s + r.orderCount, 0);
 
-  return json({
+  return ({
     recentOrders,
     monthlyGmv,
     monthlyOrders,

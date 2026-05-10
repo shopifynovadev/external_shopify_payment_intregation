@@ -1,4 +1,4 @@
-import { json } from "react-router";
+
 import { authenticate } from "../shopify.server.js";
 import prisma from "../db.server.js";
 import { verifyOtp } from "../services/otp.service.js";
@@ -12,14 +12,14 @@ export async function action({ request }) {
   try {
     body = await request.json();
   } catch {
-    return json({ success: false, error: "Invalid JSON body" }, { status: 400 });
+    return ({ success: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { otp, credentials } = body;
   // credentials: { bkashNumber, bkashUsername, bkashPassword, bkashAppKey, bkashAppSecret, bkashApiBaseUrl }
 
   if (!otp || !credentials) {
-    return json({ success: false, error: "Missing otp or credentials" }, { status: 400 });
+    return ({ success: false, error: "Missing otp or credentials" }, { status: 400 });
   }
 
   const otpResult = await verifyOtp({
@@ -29,7 +29,7 @@ export async function action({ request }) {
   });
 
   if (!otpResult.valid) {
-    return json({ success: false, error: otpResult.reason }, { status: 422 });
+    return ({ success: false, error: otpResult.reason }, { status: 422 });
   }
 
   // Encrypt each credential field
@@ -58,5 +58,5 @@ export async function action({ request }) {
     },
   });
 
-  return json({ success: true, data: { updated: true } });
+  return ({ success: true, data: { updated: true } });
 }

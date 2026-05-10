@@ -1,5 +1,5 @@
 import { useLoaderData } from "react-router";
-import { json } from "react-router";
+
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server.js";
@@ -24,7 +24,7 @@ export const loader = async ({ request, params }) => {
 
   if (!order) throw new Response("Order not found", { status: 404 });
 
-  return json({ order, shop: session.shop });
+  return ({ order, shop: session.shop });
 };
 
 export default function OrderDetail() {
