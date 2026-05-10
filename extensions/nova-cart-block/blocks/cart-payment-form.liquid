@@ -1,0 +1,152 @@
+{%- assign app_url = shop.metafields.nova_bkash.app_url.value -%}
+
+<div
+  id="nova-bkash-cart-block"
+  data-app-url="{{ app_url }}"
+  data-shop="{{ shop.myshopify_domain }}"
+  data-button-text="{{ block.settings.button_text | escape }}"
+  data-button-color="{{ block.settings.button_color }}"
+  data-show-email="{{ block.settings.show_email }}"
+>
+  <!-- Error / info banner -->
+  <div id="nova-banner" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:14px;"></div>
+
+  <!-- Customer info form -->
+  <div id="nova-form">
+    <h3 style="margin:0 0 16px; font-size:16px; font-weight:600;">Delivery Information</h3>
+
+    <div class="nova-field-row">
+      <div class="nova-field">
+        <label class="nova-label" for="nova-name">Full Name *</label>
+        <input class="nova-input" id="nova-name" type="text" placeholder="Your full name" required />
+      </div>
+      <div class="nova-field">
+        <label class="nova-label" for="nova-phone">Phone Number *</label>
+        <input class="nova-input" id="nova-phone" type="tel" placeholder="01XXXXXXXXX" required />
+      </div>
+    </div>
+
+    {%- if block.settings.show_email -%}
+    <div class="nova-field">
+      <label class="nova-label" for="nova-email">Email</label>
+      <input class="nova-input" id="nova-email" type="email" placeholder="your@email.com" />
+    </div>
+    {%- endif -%}
+
+    <div class="nova-field-row">
+      <div class="nova-field">
+        <label class="nova-label" for="nova-division">Division *</label>
+        <select class="nova-input" id="nova-division">
+          <option value="">Select division</option>
+          <option>Dhaka</option><option>Chittagong</option><option>Rajshahi</option>
+          <option>Khulna</option><option>Barisal</option><option>Sylhet</option>
+          <option>Rangpur</option><option>Mymensingh</option>
+        </select>
+      </div>
+      <div class="nova-field">
+        <label class="nova-label" for="nova-district">District *</label>
+        <input class="nova-input" id="nova-district" type="text" placeholder="Enter district" required />
+      </div>
+    </div>
+
+    <div class="nova-field-row">
+      <div class="nova-field">
+        <label class="nova-label" for="nova-thana">Thana / Upazila *</label>
+        <input class="nova-input" id="nova-thana" type="text" placeholder="Enter thana" required />
+      </div>
+      <div class="nova-field">
+        <label class="nova-label" for="nova-street">Street Address *</label>
+        <input class="nova-input" id="nova-street" type="text" placeholder="House, road, area" required />
+      </div>
+    </div>
+
+    <!-- Shipping rates section -->
+    <div class="nova-field" id="nova-shipping-section" style="display:none;">
+      <label class="nova-label">Shipping Method *</label>
+      <div id="nova-shipping-rates">
+        <p style="color:#6d7175; font-size:13px;">Enter your address to see shipping options</p>
+      </div>
+    </div>
+
+    <div id="nova-fetch-shipping-wrap" style="margin-top:8px; display:none;">
+      <button type="button" id="nova-fetch-shipping-btn" class="nova-btn nova-btn-secondary">
+        Check Shipping Rates
+      </button>
+    </div>
+
+    <!-- Discount code section -->
+    <div class="nova-field" style="margin-top:12px;">
+      <label class="nova-label" for="nova-discount">Discount Code</label>
+      <div style="display:flex; gap:8px;">
+        <input class="nova-input" id="nova-discount" type="text" placeholder="Enter code" style="flex:1;" />
+        <button type="button" id="nova-apply-discount" class="nova-btn nova-btn-secondary">Apply</button>
+      </div>
+      <p id="nova-discount-msg" style="font-size:13px; margin-top:4px;"></p>
+    </div>
+
+    <!-- Order summary -->
+    <div id="nova-summary" style="background:#f6f6f7; border-radius:8px; padding:16px; margin-top:16px; font-size:14px; display:none;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+        <span>Subtotal</span><span id="nova-subtotal">৳0.00</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+        <span>Shipping</span><span id="nova-shipping-cost">—</span>
+      </div>
+      <div id="nova-discount-row" style="display:none; justify-content:space-between; margin-bottom:6px; color:#008060;">
+        <span>Discount</span><span id="nova-discount-amount">-৳0.00</span>
+      </div>
+      <hr style="border:none; border-top:1px solid #e1e3e5; margin:8px 0;" />
+      <div style="display:flex; justify-content:space-between; font-weight:700; font-size:16px;">
+        <span>Total</span><span id="nova-total">৳0.00</span>
+      </div>
+    </div>
+
+    <!-- Pay button -->
+    <button
+      type="button"
+      id="nova-pay-btn"
+      class="nova-btn nova-btn-pay"
+      disabled
+      style="background-color:{{ block.settings.button_color }};"
+    >
+      {{ block.settings.button_text }}
+    </button>
+  </div>
+
+  <!-- Processing state -->
+  <div id="nova-processing" style="display:none; text-align:center; padding:32px;">
+    <div class="nova-spinner"></div>
+    <p style="margin-top:12px; color:#6d7175;">Connecting to bKash...</p>
+  </div>
+</div>
+
+{{ 'cart-payment.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'cart-payment.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Nova bKash Cart",
+  "target": "section",
+  "templates": ["cart"],
+  "settings": [
+    {
+      "type": "color",
+      "id": "button_color",
+      "label": "Button color",
+      "default": "#E2136E"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Pay button text",
+      "default": "Pay with bKash"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_email",
+      "label": "Show email field",
+      "default": false
+    }
+  ]
+}
+{% endschema %}

@@ -1,34 +1,243 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model MerchantSettings {
+  id               String   @id @default(cuid())
+  shopDomain       String   @unique
+  installedAt      DateTime @default(now())
+  isActive         Boolean  @default(true)
+
+  // bKash credentials stored AES-256-GCM encrypted
+  bkashNumber      String?
+  bkashUsername    String?
+  bkashPassword    String?
+  bkashAppKey      String?
+  bkashAppSecret   String?
+  bkashApiBaseUrl  String?
+
+  // Storefront API token created on install — used by backend to verify shipping
+  storefrontAccessToken String?
+
+  // Theme settings
+  enabledThemes    String[]
+  hideCheckout     Boolean  @default(true)
+
+  // Billing — pro-rate from actual install date
+  billingStartDate DateTime @default(now())
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  orders           Order[]
+  invoices         Invoice[]
+  otpRequests      OtpRequest[]
+  auditLogs        AuditLog[]
+  orderSummaries   OrderSummary[]
+}
+
+enum PaymentStatus {
+  PENDING
+  AWAITING_EXECUTE
+  COMPLETED
+  FAILED
+  ABANDONED
+  REFUNDED
+}
+
+model PendingPayment {
+  id             String        @id @default(cuid())
+  shopDomain     String
+  idempotencyKey String        @unique
+  bkashPaymentId String?       @unique
+  status         PaymentStatus @default(PENDING)
+
+  // Snapshotted at initiation — amounts verified server-side, never trusted from browser
+  cartSnapshot   Json
+  // { lineItems, subtotal, shippingHandle, shippingTitle, shippingPrice, discountCode, discountAmount, total }
+  customerInfo   Json
+  // { name, phone, email, address: { division, district, thana, street } }
+
+  totalAmount  Decimal @db.Decimal(12, 2)
+  currency     String  @default("BDT")
+
+  bkashExecuteResponse Json?
+  errorDetails         String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order?
+
+  @@index([shopDomain])
+  @@index([status, expiresAt])
+}
+
+enum OrderStatus {
+  PAID
+  FULFILLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+model Order {
+  id                  String      @id @default(cuid())
+  shopDomain          String
+  shopifyOrderId      String      @unique
+  shopifyOrderNumber  String
+  shopifyDraftOrderId String?
+
+  pendingPaymentId String         @unique
+  pendingPayment   PendingPayment @relation(fields: [pendingPaymentId], references: [id])
+
+  merchantSettings MerchantSettings @relation(fields: [shopDomain], references: [shopDomain])
+
+  bkashTransactionId String      @unique
+  totalAmount        Decimal     @db.Decimal(12, 2)
+  currency           String      @default("BDT")
+  status             OrderStatus @default(PAID)
+
+  customerName  String
+  customerPhone String
+  customerEmail String?
+  deliveryAddress Json
+
+  shippingTitle  String
+  shippingPrice  Decimal  @db.Decimal(10, 2)
+  discountCode   String?
+  discountAmount Decimal? @db.Decimal(10, 2)
+
+  refunds Refund[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shopDomain])
+  @@index([shopDomain, createdAt])
+}
+
+// Daily aggregate — fast billing calc and revenue chart
+model OrderSummary {
+  id          String   @id @default(cuid())
+  shopDomain  String
+  date        DateTime @db.Date
+  orderCount  Int      @default(0)
+  totalAmount Decimal  @db.Decimal(14, 2) @default(0)
+
+  merchantSettings MerchantSettings @relation(fields: [shopDomain], references: [shopDomain])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopDomain, date])
+  @@index([shopDomain, date])
+}
+
+enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Refund {
+  id                 String       @id @default(cuid())
+  shopDomain         String
+  orderId            String
+  order              Order        @relation(fields: [orderId], references: [id])
+  shopifyRefundId    String       @unique
+  bkashRefundId      String?      @unique
+  bkashTransactionId String
+  refundAmount       Decimal      @db.Decimal(12, 2)
+  status             RefundStatus @default(PENDING)
+  reason             String?
+  errorDetails       String?
+
+  initiatedAt DateTime  @default(now())
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@index([shopDomain])
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  WAIVED
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  shopDomain  String
+  merchantSettings MerchantSettings @relation(fields: [shopDomain], references: [shopDomain])
+
+  periodStart     DateTime
+  periodEnd       DateTime
+  gmvTotal        Decimal       @db.Decimal(14, 2)
+  invoiceAmount   Decimal       @db.Decimal(12, 2)
+  isProratedFirst Boolean       @default(false)
+  status          InvoiceStatus @default(UNPAID)
+
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+
+  @@index([shopDomain])
+}
+
+model OtpRequest {
+  id          String   @id @default(cuid())
+  shopDomain  String
+  merchantSettings MerchantSettings @relation(fields: [shopDomain], references: [shopDomain])
+
+  email       String
+  otpHash     String
+  purpose     String
+  attempts    Int      @default(0)
+  isUsed      Boolean  @default(false)
+  lockedUntil DateTime?
+  expiresAt   DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([shopDomain, purpose])
+}
+
+// Append-only audit trail for all sensitive operations
+model AuditLog {
+  id         String   @id @default(cuid())
+  shopDomain String
+  merchantSettings MerchantSettings @relation(fields: [shopDomain], references: [shopDomain])
+
+  action    String
+  actor     String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([shopDomain, createdAt])
 }

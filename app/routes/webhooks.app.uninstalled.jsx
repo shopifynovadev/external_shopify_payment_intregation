@@ -2,15 +2,26 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 export const action = async ({ request }) => {
-  const { shop, session, topic } = await authenticate.webhook(request);
+  const { shop, session } = await authenticate.webhook(request);
 
-  console.log(`Received ${topic} webhook for ${shop}`);
-
-  // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // If this webhook already ran, the session may have been deleted previously.
   if (session) {
     await db.session.deleteMany({ where: { shop } });
   }
 
-  return new Response();
+  // Deactivate merchant — preserve all historical orders/invoices/refunds
+  await db.merchantSettings.updateMany({
+    where: { shopDomain: shop },
+    data: { isActive: false },
+  });
+
+  await db.auditLog.create({
+    data: {
+      shopDomain: shop,
+      action: "APP_UNINSTALLED",
+      actor: shop,
+      metadata: { hadSession: !!session },
+    },
+  }).catch(() => {}); // non-critical, best effort
+
+  return new Response(null, { status: 200 });
 };

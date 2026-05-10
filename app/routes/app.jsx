@@ -2,11 +2,17 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import { ensureMerchantSettings } from "../services/merchantSetup.service.js";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
-  // eslint-disable-next-line no-undef
+  // Creates MerchantSettings + storefront token on first install, reactivates on reinstall
+  await ensureMerchantSettings({
+    shopDomain: session.shop,
+    accessToken: session.accessToken,
+  });
+
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
@@ -16,8 +22,11 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app">Home</s-link>
-        <s-link href="/app/additional">Additional page</s-link>
+        <s-link href="/app">Dashboard</s-link>
+        <s-link href="/app/orders">Orders</s-link>
+        <s-link href="/app/analytics">Analytics</s-link>
+        <s-link href="/app/billing">Billing</s-link>
+        <s-link href="/app/settings">Settings</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
