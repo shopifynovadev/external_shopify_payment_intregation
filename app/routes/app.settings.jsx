@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, useRouteError } from "react-router";
 
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -265,5 +265,5 @@ export default function Settings() {
   );
 }
 
-export function ErrorBoundary() { return boundary.error(); }
+export function ErrorBoundary() { return boundary.error(useRouteError()); }
 export const headers = (h) => boundary.headers(h);
