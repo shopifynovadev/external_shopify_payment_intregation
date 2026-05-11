@@ -5,30 +5,30 @@ import { CORS_HEADERS, corsPrelight } from "../utils/cors.js";
 
 export async function loader({ request }) {
   if (request.method === "OPTIONS") return corsPrelight();
-  return ({ success: false, error: "Method not allowed" }, { status: 405, headers: CORS_HEADERS });
+  return Response.json({ success: false, error: "Method not allowed" }, { status: 405, headers: CORS_HEADERS });
 }
 
 export async function action({ request }) {
   if (request.method === "OPTIONS") return corsPrelight();
   if (request.method !== "POST") {
-    return ({ success: false, error: "Method not allowed" }, { status: 405, headers: CORS_HEADERS });
+    return Response.json({ success: false, error: "Method not allowed" }, { status: 405, headers: CORS_HEADERS });
   }
 
   let body;
   try {
     body = await request.json();
   } catch {
-    return ({ success: false, error: "Invalid JSON body" }, { status: 400, headers: CORS_HEADERS });
+    return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const { shopDomain, cartId, shippingHandle, discountCode, customerInfo, lineItems, subtotal } = body;
+  const { shopDomain, shippingRate, discountCode, customerInfo, lineItems, subtotal } = body;
 
-  if (!shopDomain || !cartId || !shippingHandle || !customerInfo || !lineItems || subtotal == null) {
-    return ({ success: false, error: "Missing required fields" }, { status: 400, headers: CORS_HEADERS });
+  if (!shopDomain || !shippingRate?.code || shippingRate?.price == null || !customerInfo || !lineItems || subtotal == null) {
+    return Response.json({ success: false, error: "Missing required fields" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  if (!customerInfo.name || !customerInfo.phone || !customerInfo.address) {
-    return ({ success: false, error: "Incomplete customer info" }, { status: 400, headers: CORS_HEADERS });
+  if (!customerInfo.name || !customerInfo.phone || !customerInfo.address?.division || !customerInfo.address?.district) {
+    return Response.json({ success: false, error: "Incomplete customer info" }, { status: 400, headers: CORS_HEADERS });
   }
 
   try {
@@ -37,7 +37,7 @@ export async function action({ request }) {
     });
 
     if (!settings?.bkashAppKey) {
-      return (
+      return Response.json(
         { success: false, error: "Payment not configured for this store", code: "NOT_CONFIGURED" },
         { status: 422, headers: CORS_HEADERS }
       );
@@ -50,8 +50,7 @@ export async function action({ request }) {
 
     const result = await initiatePayment({
       shopDomain,
-      cartId,
-      shippingHandle,
+      shippingRate,
       discountCode: discountCode ?? null,
       customerInfo,
       lineItems,
@@ -59,9 +58,9 @@ export async function action({ request }) {
       accessToken: session?.accessToken,
     });
 
-    return ({ success: true, data: result }, { headers: CORS_HEADERS });
+    return Response.json({ success: true, data: result }, { headers: CORS_HEADERS });
   } catch (err) {
     const code = err.code ?? "PAYMENT_INITIATE_FAILED";
-    return ({ success: false, error: err.message, code }, { status: 422, headers: CORS_HEADERS });
+    return Response.json({ success: false, error: err.message, code }, { status: 422, headers: CORS_HEADERS });
   }
 }

@@ -8,27 +8,26 @@ import { validateDiscount } from "./discount.service.js";
 // TTL for pending payments: 30 minutes
 const PAYMENT_TTL_MS = 30 * 60 * 1000;
 
-function makeIdempotencyKey(cartId, shopDomain) {
-  return createHash("sha256").update(`${cartId}:${shopDomain}:${Date.now()}`).digest("hex");
+function makeIdempotencyKey(phone, shopDomain) {
+  return createHash("sha256").update(`${phone}:${shopDomain}:${Date.now()}`).digest("hex");
 }
 
 export async function initiatePayment({
   shopDomain,
-  cartId,
-  shippingHandle,
+  shippingRate,
   discountCode,
   customerInfo,
   lineItems,
   subtotal,
   accessToken,
 }) {
-  // Idempotency: if a PENDING payment for this exact cart already exists (within last 5 min), return it
+  // Idempotency: if a PENDING payment from the same customer phone within last 5 min, return it
   const existing = await prisma.pendingPayment.findFirst({
     where: {
       shopDomain,
       status: "PENDING",
       createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) },
-      cartSnapshot: { path: ["cartId"], equals: cartId },
+      customerInfo: { path: ["phone"], equals: customerInfo.phone },
     },
   });
 
@@ -36,8 +35,14 @@ export async function initiatePayment({
     return { paymentId: existing.id, redirectUrl: existing.cartSnapshot.bkashURL };
   }
 
-  // Verify shipping rate server-side — never trust the price from the browser
-  const shipping = await verifyShippingRate({ shopDomain, cartId, shippingHandle });
+  // Verify shipping rate server-side — re-fetch from the store's Ajax Cart API
+  const shipping = await verifyShippingRate({
+    shopDomain,
+    division: customerInfo.address.division,
+    district: customerInfo.address.district,
+    shippingCode: shippingRate.code,
+    shippingPrice: shippingRate.price,
+  });
 
   // Validate discount if provided
   let discountAmount = 0;
@@ -59,7 +64,7 @@ export async function initiatePayment({
   const total = parseFloat((subtotal + shipping.price - discountAmount).toFixed(2));
   if (total <= 0) throw Object.assign(new Error("Invalid total amount"), { code: "INVALID_AMOUNT" });
 
-  const idempotencyKey = makeIdempotencyKey(cartId, shopDomain);
+  const idempotencyKey = makeIdempotencyKey(customerInfo.phone, shopDomain);
 
   // Call bKash via queue — prevents duplicate payments
   const { paymentID, bkashURL } = await paymentQueue.enqueue(() =>
@@ -71,10 +76,9 @@ export async function initiatePayment({
   );
 
   const cartSnapshot = {
-    cartId,
     lineItems,
     subtotal,
-    shippingHandle,
+    shippingCode: shippingRate.code,
     shippingTitle: shipping.title,
     shippingPrice: shipping.price,
     discountCode: discountValid ? discountCode : null,

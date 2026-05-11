@@ -1,64 +1,29 @@
-import prisma from "../db.server.js";
-
-const SHIPPING_QUERY = `
-  query GetCartDelivery($cartId: ID!) {
-    cart(id: $cartId) {
-      deliveryGroups {
-        deliveryOptions {
-          handle
-          title
-          estimatedCost {
-            amount
-            currencyCode
-          }
-        }
-      }
-    }
-  }
-`;
-
-export async function verifyShippingRate({ shopDomain, cartId, shippingHandle }) {
-  const settings = await prisma.merchantSettings.findUnique({
-    where: { shopDomain },
-    select: { storefrontAccessToken: true },
+export async function verifyShippingRate({ shopDomain, division, district, shippingCode, shippingPrice }) {
+  const params = new URLSearchParams({
+    "shipping_address[country]": "Bangladesh",
+    "shipping_address[province]": division,
+    "shipping_address[city]": district,
+    "shipping_address[zip]": "",
   });
 
-  if (!settings?.storefrontAccessToken) {
-    throw new Error("Storefront access token not configured for this shop");
-  }
-
-  const res = await fetch(
-    `https://${shopDomain}/api/2026-04/graphql.json`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token": settings.storefrontAccessToken,
-      },
-      body: JSON.stringify({ query: SHIPPING_QUERY, variables: { cartId } }),
-    }
-  );
+  const res = await fetch(`https://${shopDomain}/cart/shipping_rates.json?${params}`);
 
   if (!res.ok) {
-    throw new Error(`Storefront API error: ${res.status}`);
+    throw Object.assign(new Error(`Could not fetch shipping rates from store: ${res.status}`), { code: "SHIPPING_FETCH_FAILED" });
   }
 
-  const { data, errors } = await res.json();
-
-  if (errors?.length) {
-    throw new Error(`Storefront GraphQL error: ${errors[0].message}`);
-  }
-
-  const options = data?.cart?.deliveryGroups?.flatMap((g) => g.deliveryOptions) ?? [];
-  const matched = options.find((o) => o.handle === shippingHandle);
+  const json = await res.json();
+  const rates = json.shipping_rates ?? [];
+  const matched = rates.find((r) => r.code === shippingCode);
 
   if (!matched) {
-    throw new Error(`Shipping rate handle not found: ${shippingHandle}`);
+    throw Object.assign(new Error(`Shipping rate not found: ${shippingCode}`), { code: "INVALID_SHIPPING_RATE" });
   }
 
-  return {
-    title: matched.title,
-    price: parseFloat(matched.estimatedCost.amount),
-    currency: matched.estimatedCost.currencyCode,
-  };
+  const verifiedPrice = parseFloat(matched.price);
+  if (Math.abs(verifiedPrice - shippingPrice) > 0.01) {
+    throw Object.assign(new Error("Shipping price mismatch"), { code: "SHIPPING_PRICE_MISMATCH" });
+  }
+
+  return { title: matched.name, price: verifiedPrice };
 }
