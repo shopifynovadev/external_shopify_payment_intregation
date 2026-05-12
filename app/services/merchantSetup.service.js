@@ -8,9 +8,34 @@ const UPSERT_APP_URL_METAFIELD = `
   }
 `;
 
+const GET_SHOP_ID = `
+  query {
+    shop {
+      id
+    }
+  }
+`;
+
 async function setAppUrlMetafield({ shopDomain, accessToken }) {
   const appUrl = process.env.SHOPIFY_APP_URL;
   if (!appUrl) return;
+
+  // 1. Get the real shop ID
+  const shopRes = await fetch(`https://${shopDomain}/admin/api/2026-04/graphql.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
+    body: JSON.stringify({ query: GET_SHOP_ID }),
+  });
+  const shopJson = await shopRes.json();
+  const { data: shopData } = shopJson;
+  const shopId = shopData?.shop?.id;
+
+  if (!shopId) {
+    console.error("Could not fetch shop ID");
+    return;
+  }
+
+  // 2. Set metafield with real shop ID
   await fetch(`https://${shopDomain}/admin/api/2026-04/graphql.json`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
@@ -18,7 +43,7 @@ async function setAppUrlMetafield({ shopDomain, accessToken }) {
       query: UPSERT_APP_URL_METAFIELD,
       variables: {
         metafields: [{
-          ownerId: `gid://shopify/Shop/1`,
+          ownerId: shopId,
           namespace: "nova_bkash",
           key: "app_url",
           value: appUrl,
@@ -29,52 +54,14 @@ async function setAppUrlMetafield({ shopDomain, accessToken }) {
   }).catch(() => {});
 }
 
-const CREATE_STOREFRONT_TOKEN = `
-  mutation StorefrontAccessTokenCreate($input: StorefrontAccessTokenInput!) {
-    storefrontAccessTokenCreate(input: $input) {
-      storefrontAccessToken { accessToken }
-      userErrors { field message }
-    }
-  }
-`;
-
-async function createStorefrontToken({ shopDomain, accessToken }) {
-  const res = await fetch(`https://${shopDomain}/admin/api/2026-04/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": accessToken,
-    },
-    body: JSON.stringify({
-      query: CREATE_STOREFRONT_TOKEN,
-      variables: { input: { title: "Nova bKash Storefront Token" } },
-    }),
-  });
-
-  const { data } = await res.json();
-  const errors = data?.storefrontAccessTokenCreate?.userErrors ?? [];
-  if (errors.length) throw new Error(errors[0].message);
-
-  return data?.storefrontAccessTokenCreate?.storefrontAccessToken?.accessToken ?? null;
-}
-
 export async function ensureMerchantSettings({ shopDomain, accessToken }) {
   const existing = await prisma.merchantSettings.findUnique({ where: { shopDomain } });
 
   if (existing) {
-    // Reactivate if previously uninstalled
     if (!existing.isActive) {
       await prisma.merchantSettings.update({ where: { shopDomain }, data: { isActive: true } });
     }
     return existing;
-  }
-
-  // First install — create settings + storefront token + app URL metafield
-  let storefrontAccessToken = null;
-  try {
-    storefrontAccessToken = await createStorefrontToken({ shopDomain, accessToken });
-  } catch (err) {
-    console.error(`[merchantSetup] Could not create storefront token for ${shopDomain}:`, err.message);
   }
 
   // Write app URL to shop metafield so Liquid theme blocks can read it without merchant config
@@ -83,7 +70,7 @@ export async function ensureMerchantSettings({ shopDomain, accessToken }) {
   const settings = await prisma.merchantSettings.create({
     data: {
       shopDomain,
-      storefrontAccessToken,
+      storefrontAccessToken: null,
       isActive: true,
       billingStartDate: new Date(),
     },
@@ -94,7 +81,7 @@ export async function ensureMerchantSettings({ shopDomain, accessToken }) {
       shopDomain,
       action: "APP_INSTALLED",
       actor: shopDomain,
-      metadata: { hasStorefrontToken: !!storefrontAccessToken },
+      metadata: {},
     },
   });
 

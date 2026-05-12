@@ -1,39 +1,11 @@
 (() => {
-  const CART_CREATE = `
-    mutation CartCreate($lines: [CartLineInput!]!) {
-      cartCreate(input: { lines: $lines }) {
-        cart { id }
-        userErrors { field message }
-      }
-    }
-  `;
-
-  const CART_BUYER_UPDATE = `
-    mutation CartBuyerUpdate($cartId: ID!, $buyerIdentity: CartBuyerIdentityInput!) {
-      cartBuyerIdentityUpdate(cartId: $cartId, buyerIdentity: $buyerIdentity) {
-        cart {
-          deliveryGroups {
-            deliveryOptions {
-              handle
-              title
-              estimatedCost { amount currencyCode }
-            }
-          }
-        }
-        userErrors { field message }
-      }
-    }
-  `;
-
   class NovaBkashCart {
     constructor(el) {
       this.el = el;
       this.appUrl = el.dataset.appUrl;
       this.shopDomain = el.dataset.shop;
-      this.storefrontToken = null;
-      this.storefrontCartId = null;
       this.cartData = null;
-      this.selectedRate = null; // { handle, title, price }
+      this.selectedRate = null; // { code, title, price }
       this.discountCode = null;
       this.discountAmount = 0;
       this.discountApplied = false;
@@ -56,7 +28,6 @@
       const res = await fetch(`${this.appUrl}/api/storefront-config?shop=${this.shopDomain}`);
       const json = await res.json();
       if (!json.success) throw new Error("Payment not configured for this store");
-      this.storefrontToken = json.data.storefrontToken;
       if (!json.data.isPaymentConfigured) {
         this.showBanner("bKash payment is not configured by the store owner.", "warning");
         this.$("nova-pay-btn").disabled = true;
@@ -74,75 +45,49 @@
       this.updateSummary();
     }
 
-    async storefrontGQL(query, variables) {
-      const res = await fetch(`https://${this.shopDomain}/api/2026-04/graphql.json`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Storefront-Access-Token": this.storefrontToken,
-        },
-        body: JSON.stringify({ query, variables }),
-      });
-      return res.json();
-    }
-
-    async createStorefrontCart() {
-      const lines = this.cartData.items.map((item) => ({
-        merchandiseId: `gid://shopify/ProductVariant/${item.variant_id}`,
-        quantity: item.quantity,
-      }));
-      const { data, errors } = await this.storefrontGQL(CART_CREATE, { lines });
-      if (errors?.length || data?.cartCreate?.userErrors?.length) {
-        throw new Error("Could not create cart for shipping rates");
-      }
-      this.storefrontCartId = data.cartCreate.cart.id;
-    }
-
     async fetchShippingRates() {
-      if (!this.storefrontToken) return;
-      if (!this.storefrontCartId) await this.createStorefrontCart();
-
       const district = this.$("nova-district").value.trim();
-      const thana = this.$("nova-thana").value.trim();
-      if (!district || !thana) {
-        this.showBanner("Please fill in District and Thana before fetching shipping rates.", "warning");
+      const division = this.$("nova-division").value;
+
+      if (!district || !division) {
+        this.showBanner("Please fill in Division and District before fetching shipping rates.", "warning");
         return;
       }
 
       this.setShippingRatesLoading(true);
 
-      const { data } = await this.storefrontGQL(CART_BUYER_UPDATE, {
-        cartId: this.storefrontCartId,
-        buyerIdentity: {
-          deliveryAddressPreferences: [{
-            deliveryAddress: {
-              address1: this.$("nova-street").value.trim() || thana,
-              city: district,
-              countryCode: "BD",
-            },
-          }],
-        },
+      const params = new URLSearchParams({
+        "shipping_address[country]": "Bangladesh",
+        "shipping_address[province]": division,
+        "shipping_address[city]": district,
+        "shipping_address[zip]": "",
       });
 
-      const options = data?.cartBuyerIdentityUpdate?.cart?.deliveryGroups?.flatMap((g) => g.deliveryOptions) ?? [];
-      this.setShippingRatesLoading(false);
-      this.renderShippingRates(options);
+      try {
+        const res = await fetch(`/cart/shipping_rates.json?${params}`);
+        const json = await res.json();
+        this.setShippingRatesLoading(false);
+        this.renderShippingRates(json.shipping_rates ?? []);
+      } catch {
+        this.setShippingRatesLoading(false);
+        this.showBanner("Could not fetch shipping rates. Please try again.", "error");
+      }
     }
 
-    renderShippingRates(options) {
+    renderShippingRates(rates) {
       const container = this.$("nova-shipping-rates");
       this.$("nova-shipping-section").style.display = "block";
 
-      if (options.length === 0) {
+      if (rates.length === 0) {
         container.innerHTML = `<p style="color:#d72c0d;font-size:13px;">No shipping rates available for this address.</p>`;
         return;
       }
 
-      container.innerHTML = options.map((opt) => `
-        <label class="nova-rate-option" data-handle="${opt.handle}" data-price="${opt.estimatedCost.amount}" data-title="${opt.title}">
-          <input type="radio" name="nova-shipping-rate" value="${opt.handle}" style="margin:0;" />
-          <span style="flex:1;">${opt.title}</span>
-          <strong>৳${parseFloat(opt.estimatedCost.amount).toFixed(2)}</strong>
+      container.innerHTML = rates.map((rate) => `
+        <label class="nova-rate-option" data-code="${rate.code}" data-price="${rate.price}" data-title="${rate.name}">
+          <input type="radio" name="nova-shipping-rate" value="${rate.code}" style="margin:0;" />
+          <span style="flex:1;">${rate.name}</span>
+          <strong>৳${parseFloat(rate.price).toFixed(2)}</strong>
         </label>
       `).join("");
 
@@ -152,7 +97,7 @@
           el.classList.add("selected");
           el.querySelector("input").checked = true;
           this.selectedRate = {
-            handle: el.dataset.handle,
+            code: el.dataset.code,
             title: el.dataset.title,
             price: parseFloat(el.dataset.price),
           };
@@ -261,8 +206,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shopDomain: this.shopDomain,
-          cartId: this.storefrontCartId,
-          shippingHandle: this.selectedRate.handle,
+          shippingRate: this.selectedRate,
           discountCode: this.discountCode,
           customerInfo: { name, phone, email, address: { division, district, thana, street } },
           lineItems,
@@ -273,7 +217,6 @@
       const json = await res.json();
 
       if (json.success) {
-        // Store paymentId before redirect so the callback page can poll
         sessionStorage.setItem("nova_payment_id", json.data.paymentId);
         window.location.href = json.data.redirectUrl;
       } else {
@@ -282,7 +225,6 @@
       }
     }
 
-    // Called when customer returns from bKash (failed / cancelled)
     checkReturnFromBkash() {
       const params = new URLSearchParams(window.location.search);
       const paymentId = params.get("payment_id");
@@ -290,7 +232,6 @@
 
       if (paymentId && status === "failed") {
         this.showBanner("Payment was not completed. Please try again.", "error");
-        // Clean up URL
         const clean = new URL(window.location.href);
         clean.searchParams.delete("payment_id");
         clean.searchParams.delete("payment_status");
@@ -328,7 +269,6 @@
       addressFields.forEach((id) => {
         this.$(id)?.addEventListener("change", () => {
           this.$("nova-fetch-shipping-wrap").style.display = "block";
-          // Reset selected rate if address changes
           this.selectedRate = null;
           this.validateForm();
         });
