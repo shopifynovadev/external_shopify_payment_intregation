@@ -1,4 +1,9 @@
 [name=checkout],
+[data-shopify=payment-button],
 #main-cart-footer {
   display: none !important;
+}
+
+.button.view-cart {
+  width: 100%;
 }
