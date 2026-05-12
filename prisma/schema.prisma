@@ -228,6 +228,22 @@ model OtpRequest {
   @@index([shopDomain, purpose])
 }
 
+model ShippingRate {
+  id            String   @id @default(cuid())
+  shopDomain    String
+  title         String
+  division      String   // "ALL" for nationwide fallback, or specific division name
+  flatAmount    Decimal  @db.Decimal(10, 2)
+  freeAbove     Decimal? @db.Decimal(10, 2) // free shipping if order total >= this
+  estimatedDays String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([shopDomain, isActive])
+  @@index([shopDomain, division, isActive])
+}
+
 // Append-only audit trail for all sensitive operations
 model AuditLog {
   id         String   @id @default(cuid())

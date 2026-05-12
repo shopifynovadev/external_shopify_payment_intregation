@@ -2,8 +2,8 @@ import { createHash } from "crypto";
 import prisma from "../db.server.js";
 import { paymentQueue } from "../queues/index.js";
 import { createPayment } from "./bkash.service.js";
-import { verifyShippingRate } from "./shipping.service.js";
 import { validateDiscount } from "./discount.service.js";
+import { resolveShippingRate } from "../models/shippingRate.server.js";
 
 // TTL for pending payments: 30 minutes
 const PAYMENT_TTL_MS = 30 * 60 * 1000;
@@ -35,14 +35,22 @@ export async function initiatePayment({
     return { paymentId: existing.id, redirectUrl: existing.cartSnapshot.bkashURL };
   }
 
-  // Verify shipping rate server-side — re-fetch from the store's Ajax Cart API
-  const shipping = await verifyShippingRate({
-    shopDomain,
-    division: customerInfo.address.division,
-    district: customerInfo.address.district,
-    shippingCode: shippingRate.code,
-    shippingPrice: shippingRate.price,
-  });
+  // Resolve shipping rate from DB — never trust the price from the browser
+  let shippingTitle = "No Shipping";
+  let shippingPrice = 0;
+
+  if (shippingRate?.code) {
+    const resolved = await resolveShippingRate({
+      id: shippingRate.code,
+      shopDomain,
+      orderTotal: subtotal,
+    });
+    if (!resolved) {
+      throw Object.assign(new Error("Invalid or inactive shipping rate"), { code: "INVALID_SHIPPING" });
+    }
+    shippingTitle = resolved.title;
+    shippingPrice = resolved.price;
+  }
 
   // Validate discount if provided
   let discountAmount = 0;
@@ -61,7 +69,7 @@ export async function initiatePayment({
     discountValid = true;
   }
 
-  const total = parseFloat((subtotal + shipping.price - discountAmount).toFixed(2));
+  const total = parseFloat((subtotal + shippingPrice - discountAmount).toFixed(2));
   if (total <= 0) throw Object.assign(new Error("Invalid total amount"), { code: "INVALID_AMOUNT" });
 
   const idempotencyKey = makeIdempotencyKey(customerInfo.phone, shopDomain);
@@ -78,9 +86,9 @@ export async function initiatePayment({
   const cartSnapshot = {
     lineItems,
     subtotal,
-    shippingCode: shippingRate.code,
-    shippingTitle: shipping.title,
-    shippingPrice: shipping.price,
+    shippingRateId: shippingRate?.code ?? null,
+    shippingTitle,
+    shippingPrice,
     discountCode: discountValid ? discountCode : null,
     discountAmount,
     total,
