@@ -142,6 +142,20 @@
 
             <div class="form-row">
               <div class="form-group">
+                <label for="division">Division<span style="color:red;">*</span></label>
+                <select class="form-control" id="division" name="division" required>
+                  <option value="">Select division</option>
+                  <option value="dhaka">Dhaka</option>
+                  <option value="chittagong">Chittagong</option>
+                  <option value="rajshahi">Rajshahi</option>
+                  <option value="khulna">Khulna</option>
+                  <option value="barishal">Barisal</option>
+                  <option value="shylet">Sylhet</option>
+                  <option value="rangpur">Rangpur</option>
+                  <option value="mymensingh">Mymensingh</option>
+                </select>
+              </div>
+              <div class="form-group">
                 <label for="country">Country<span style="color:red;">*</span></label>
                 <select id="country" class="form-control" name="country" required>
                   <option value="bangladesh" selected>Bangladesh</option>
@@ -329,6 +343,7 @@
           address: formData.get("address"),
           city: formData.get("city"),
           zip: formData.get("zip"),
+          division: formData.get("division"),
           country: formData.get("country"),
           countryCode: formData.get("country") === 'bangladesh' && "BD",
           shipping_method: {
@@ -344,8 +359,10 @@
         localStorage.setItem(`cart-${cart.token.split("?key=")[1]}`, JSON.stringify(order_details.shipping_details));
       }
 
+      console.log(order_details);
+
       try {
-        const res = await fetch('{{ shop.metafields.custom.backend_app_url }}/api/bkash/payment/create', {
+        const res = await fetch('{{ shop.metafields.nova_bkash.app_url.value }}/api/bkash/payment/create', {
           method: 'POST',
           headers: {
             accept: 'application/json',
@@ -395,6 +412,7 @@
               form.querySelector('[name="address"]').value = data.address || "";
               form.querySelector('[name="city"]').value = data.city || "";
               form.querySelector('[name="zip"]').value = data.zip || "";
+              form.querySelector('[name="division"]').value = data.division || "";
               form.querySelector('[name="country"]').value = data.country || "";
 
               const selectedShippingMethods = document.querySelector(`[value="${data.shipping_method.id}"]`);
