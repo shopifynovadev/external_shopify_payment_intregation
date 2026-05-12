@@ -128,7 +128,7 @@ async function reconcileMerchant(merchant, sinceDate) {
 
 export async function action({ request }) {
   if (!authorized(request)) {
-    return ({ success: false, error: "Unauthorized" }, { status: 401 });
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
   }
 
   const yesterday = new Date();

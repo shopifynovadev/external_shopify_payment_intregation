@@ -10,6 +10,13 @@ export function corsPrelight() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
 
+export function corsJson(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+  });
+}
+
 export function withCors(response) {
   const headers = new Headers(response.headers);
   Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));

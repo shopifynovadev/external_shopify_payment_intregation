@@ -1,6 +1,6 @@
 
 import prisma from "../db.server.js";
-import { CORS_HEADERS, corsPrelight } from "../utils/cors.js";
+import { corsJson, corsPrelight } from "../utils/cors.js";
 
 export async function loader({ request }) {
   if (request.method === "OPTIONS") return corsPrelight();
@@ -9,7 +9,7 @@ export async function loader({ request }) {
   const shop = url.searchParams.get("shop");
 
   if (!shop) {
-    return ({ success: false, error: "Missing shop" }, { status: 400, headers: CORS_HEADERS });
+    return corsJson({ success: false, error: "Missing shop" }, 400);
   }
 
   const settings = await prisma.merchantSettings.findUnique({
@@ -18,18 +18,15 @@ export async function loader({ request }) {
   });
 
   if (!settings?.storefrontAccessToken) {
-    return ({ success: false, error: "Not configured" }, { status: 404, headers: CORS_HEADERS });
+    return corsJson({ success: false, error: "Not configured" }, 404);
   }
 
-  return (
-    {
-      success: true,
-      data: {
-        storefrontToken: settings.storefrontAccessToken,
-        appUrl: process.env.SHOPIFY_APP_URL,
-        isPaymentConfigured: !!settings.bkashAppKey,
-      },
+  return corsJson({
+    success: true,
+    data: {
+      storefrontToken: settings.storefrontAccessToken,
+      appUrl: process.env.SHOPIFY_APP_URL,
+      isPaymentConfigured: !!settings.bkashAppKey,
     },
-    { headers: CORS_HEADERS }
-  );
+  });
 }

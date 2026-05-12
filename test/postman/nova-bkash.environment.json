@@ -1,0 +1,90 @@
+{
+  "name": "Nova bKash - Local Dev",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "enabled": true,
+      "description": "Your app URL (or ngrok URL if testing webhooks)"
+    },
+    {
+      "key": "shop_domain",
+      "value": "your-dev-store.myshopify.com",
+      "enabled": true,
+      "description": "Your Shopify dev store domain"
+    },
+    {
+      "key": "cron_secret",
+      "value": "",
+      "enabled": true,
+      "description": "Copy from your .env CRON_SECRET"
+    },
+    {
+      "key": "shopify_api_secret",
+      "value": "",
+      "enabled": true,
+      "description": "Copy from your .env SHOPIFY_API_SECRET — used to sign fake webhook payloads"
+    },
+    {
+      "key": "shipping_handle",
+      "value": "",
+      "enabled": true,
+      "description": "A real shipping handle from your dev store. Get it: Storefront API → cart → availableShippingRates"
+    },
+    {
+      "key": "test_variant_id",
+      "value": "",
+      "enabled": true,
+      "description": "A real product variant GID from your dev store. e.g. gid://shopify/ProductVariant/12345"
+    },
+    {
+      "key": "test_subtotal",
+      "value": "500",
+      "enabled": true,
+      "description": "Subtotal in BDT for test orders. Must match the actual line item price."
+    },
+    {
+      "key": "valid_discount_code",
+      "value": "",
+      "enabled": true,
+      "description": "A real active discount code in your dev store (create one in Shopify Admin → Discounts)"
+    },
+    {
+      "key": "payment_id",
+      "value": "",
+      "enabled": true,
+      "description": "Auto-set by test 2.1 (Initiate happy path)"
+    },
+    {
+      "key": "bkash_payment_id",
+      "value": "",
+      "enabled": true,
+      "description": "Auto-set by test 2.1 (extracted from bKash redirectUrl)"
+    },
+    {
+      "key": "bkash_payment_id_2",
+      "value": "",
+      "enabled": true,
+      "description": "Manually set — initiate a second payment with a different cartId, copy its bkash paymentID here"
+    },
+    {
+      "key": "completed_payment_id",
+      "value": "",
+      "enabled": true,
+      "description": "Manually set AFTER completing a full bKash sandbox payment. Copy the payment_id from test 2.1."
+    },
+    {
+      "key": "completed_shopify_order_gid",
+      "value": "",
+      "enabled": true,
+      "description": "The Shopify order GID of a completed order. Get it from DB: SELECT shopify_order_id FROM orders LIMIT 1"
+    },
+    {
+      "key": "completed_bkash_trx_id",
+      "value": "",
+      "enabled": true,
+      "description": "Auto-set by test 4.2 after a COMPLETED payment status poll"
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

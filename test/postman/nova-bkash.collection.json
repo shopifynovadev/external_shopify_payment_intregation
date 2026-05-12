@@ -1,0 +1,916 @@
+{
+  "info": {
+    "name": "Nova bKash Backend Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. Health Check",
+      "item": [
+        {
+          "name": "1.1 Health - DB up",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/health", "host": ["{{base_url}}"], "path": ["api", "health"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('status ok or degraded', () => pm.expect(json.status).to.be.oneOf(['ok', 'degraded']));",
+                  "pm.test('db connected', () => pm.expect(json.db).to.equal('connected'));",
+                  "pm.test('has queues', () => pm.expect(json.queues).to.exist);",
+                  "pm.test('has timestamp', () => pm.expect(json.timestamp).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02. Payment Initiate",
+      "item": [
+        {
+          "name": "2.1 Initiate - Happy path",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\",\n  \"cartId\": \"gid://shopify/Cart/test-cart-001\",\n  \"shippingHandle\": \"{{shipping_handle}}\",\n  \"customerInfo\": {\n    \"name\": \"Test User\",\n    \"phone\": \"01712345678\",\n    \"email\": \"test@example.com\",\n    \"address\": {\n      \"division\": \"Dhaka\",\n      \"district\": \"Dhaka\",\n      \"thana\": \"Gulshan\",\n      \"street\": \"House 1, Road 2, Gulshan-1\"\n    }\n  },\n  \"lineItems\": [\n    { \"variantId\": \"{{test_variant_id}}\", \"quantity\": 1 }\n  ],\n  \"subtotal\": {{test_subtotal}}\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('has paymentId', () => pm.expect(json.data.paymentId).to.exist);",
+                  "pm.test('has redirectUrl', () => pm.expect(json.data.redirectUrl).to.be.a('string'));",
+                  "pm.environment.set('payment_id', json.data.paymentId);",
+                  "// Extract bkash paymentID from the redirectUrl query param",
+                  "const url = new URL(json.data.redirectUrl);",
+                  "const bkashPaymentId = url.searchParams.get('paymentID');",
+                  "pm.environment.set('bkash_payment_id', bkashPaymentId);",
+                  "console.log('payment_id:', json.data.paymentId);",
+                  "console.log('bkash_payment_id:', bkashPaymentId);",
+                  "console.log('bKash URL (open in browser to pay):', json.data.redirectUrl);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Initiate - Idempotency (same cartId within 5 min)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\",\n  \"cartId\": \"gid://shopify/Cart/test-cart-001\",\n  \"shippingHandle\": \"{{shipping_handle}}\",\n  \"customerInfo\": {\n    \"name\": \"Test User\",\n    \"phone\": \"01712345678\",\n    \"email\": \"test@example.com\",\n    \"address\": {\n      \"division\": \"Dhaka\",\n      \"district\": \"Dhaka\",\n      \"thana\": \"Gulshan\",\n      \"street\": \"House 1, Road 2, Gulshan-1\"\n    }\n  },\n  \"lineItems\": [\n    { \"variantId\": \"{{test_variant_id}}\", \"quantity\": 1 }\n  ],\n  \"subtotal\": {{test_subtotal}}\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "const originalPaymentId = pm.environment.get('payment_id');",
+                  "pm.test('same paymentId returned (idempotent)', () => {",
+                  "  pm.expect(json.data.paymentId).to.equal(originalPaymentId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Initiate - Invalid discount code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\",\n  \"cartId\": \"gid://shopify/Cart/test-cart-discount\",\n  \"shippingHandle\": \"{{shipping_handle}}\",\n  \"discountCode\": \"INVALID_CODE_XYZ\",\n  \"customerInfo\": {\n    \"name\": \"Test User\",\n    \"phone\": \"01712345678\",\n    \"email\": \"test@example.com\",\n    \"address\": {\n      \"division\": \"Dhaka\",\n      \"district\": \"Dhaka\",\n      \"thana\": \"Gulshan\",\n      \"street\": \"House 1, Road 2\"\n    }\n  },\n  \"lineItems\": [\n    { \"variantId\": \"{{test_variant_id}}\", \"quantity\": 1 }\n  ],\n  \"subtotal\": {{test_subtotal}}\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const json = pm.response.json();",
+                  "pm.test('success false', () => pm.expect(json.success).to.be.false);",
+                  "pm.test('INVALID_DISCOUNT code', () => pm.expect(json.code).to.equal('INVALID_DISCOUNT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 Initiate - Missing required fields",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('success false', () => pm.expect(json.success).to.be.false);",
+                  "pm.test('has error message', () => pm.expect(json.error).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 Initiate - Shop not configured (wrong shopDomain)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"nonexistent-shop.myshopify.com\",\n  \"cartId\": \"gid://shopify/Cart/test-cart-999\",\n  \"shippingHandle\": \"some-handle\",\n  \"customerInfo\": {\n    \"name\": \"Test User\",\n    \"phone\": \"01712345678\",\n    \"email\": \"test@example.com\",\n    \"address\": {\n      \"division\": \"Dhaka\",\n      \"district\": \"Dhaka\",\n      \"thana\": \"Gulshan\",\n      \"street\": \"House 1\"\n    }\n  },\n  \"lineItems\": [{ \"variantId\": \"gid://shopify/ProductVariant/1\", \"quantity\": 1 }],\n  \"subtotal\": 100\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const json = pm.response.json();",
+                  "pm.test('NOT_CONFIGURED code', () => pm.expect(json.code).to.equal('NOT_CONFIGURED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 Initiate - Invalid JSON body",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "this is not json" },
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('Invalid JSON error', () => pm.expect(json.error).to.include('JSON'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03. Payment Callback (Cancel + Failure)",
+      "description": "Run 2.1 first to get bkash_payment_id. The success/execute path requires completing payment in the bKash sandbox browser — bKash will redirect to callback automatically. Disable 'Follow Redirects' in Postman Settings to see the 302 Location header.",
+      "item": [
+        {
+          "name": "3.1 Callback - status=cancel → FAILED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/callback?paymentID={{bkash_payment_id}}&status=cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "callback"],
+              "query": [
+                { "key": "paymentID", "value": "{{bkash_payment_id}}" },
+                { "key": "status", "value": "cancel" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Postman follows redirects by default — check final URL contains payment_status=failed",
+                  "// OR disable 'Follow Redirects' to check 302 Location header directly",
+                  "const finalUrl = pm.response.url;",
+                  "pm.test('Redirected to cart with failed status', () => {",
+                  "  pm.expect(finalUrl).to.include('payment_status=failed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Callback - status=failure → FAILED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/callback?paymentID={{bkash_payment_id_2}}&status=failure",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "callback"],
+              "query": [
+                { "key": "paymentID", "value": "{{bkash_payment_id_2}}" },
+                { "key": "status", "value": "failure" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Run 2.1 again with a different cartId first to get a fresh bkash_payment_id_2"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const finalUrl = pm.response.url;",
+                  "pm.test('Redirected to cart with failed status', () => {",
+                  "  pm.expect(finalUrl).to.include('payment_status=failed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 Callback - missing paymentID → error redirect",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/callback?status=success",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "callback"],
+              "query": [{ "key": "status", "value": "success" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const finalUrl = pm.response.url;",
+                  "pm.test('Redirected with missing_payment_id error', () => {",
+                  "  pm.expect(finalUrl).to.include('payment_error=missing_payment_id');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 Callback - unknown paymentID → not_found redirect",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/callback?paymentID=nonexistent-bkash-id-xyz&status=success",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "callback"],
+              "query": [
+                { "key": "paymentID", "value": "nonexistent-bkash-id-xyz" },
+                { "key": "status", "value": "success" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const finalUrl = pm.response.url;",
+                  "pm.test('Redirected with not_found error', () => {",
+                  "  pm.expect(finalUrl).to.include('payment_error=not_found');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04. Payment Status",
+      "item": [
+        {
+          "name": "4.1 Status - After cancel (FAILED)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/status/{{payment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "status", "{{payment_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('payment status is FAILED', () => pm.expect(json.data.status).to.equal('FAILED'));",
+                  "pm.test('no shopify order number (payment failed)', () => {",
+                  "  pm.expect(json.data.shopifyOrderNumber).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Status - COMPLETED (run after successful bKash sandbox payment)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/status/{{completed_payment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "status", "{{completed_payment_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('payment COMPLETED', () => pm.expect(json.data.status).to.equal('COMPLETED'));",
+                  "pm.test('has shopify order number', () => pm.expect(json.data.shopifyOrderNumber).to.be.a('string'));",
+                  "pm.test('has bkash transaction ID', () => pm.expect(json.data.bkashTransactionId).to.be.a('string'));",
+                  "pm.environment.set('completed_bkash_trx_id', json.data.bkashTransactionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Status - Non-existent payment ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payment/status/nonexistent-id-xyz-000",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "status", "nonexistent-id-xyz-000"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('data is null for unknown id', () => pm.expect(json.data).to.be.null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05. Discount Validate",
+      "item": [
+        {
+          "name": "5.1 Discount - Valid code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\",\n  \"code\": \"{{valid_discount_code}}\",\n  \"cartSubtotal\": {{test_subtotal}}\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/discount/validate", "host": ["{{base_url}}"], "path": ["api", "discount", "validate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('discount is valid', () => pm.expect(json.data.valid).to.be.true);",
+                  "pm.test('has discountAmount', () => pm.expect(json.data.discountAmount).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 Discount - Invalid/expired code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\",\n  \"code\": \"EXPIRED_CODE_XYZ\",\n  \"cartSubtotal\": {{test_subtotal}}\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/discount/validate", "host": ["{{base_url}}"], "path": ["api", "discount", "validate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('discount is NOT valid', () => pm.expect(json.data.valid).to.be.false);",
+                  "pm.test('has reason', () => pm.expect(json.data.reason).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 Discount - Missing fields",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopDomain\": \"{{shop_domain}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/discount/validate", "host": ["{{base_url}}"], "path": ["api", "discount", "validate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('success false', () => pm.expect(json.success).to.be.false);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06. Cron Jobs",
+      "item": [
+        {
+          "name": "6.1 Cleanup - No auth → 401",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/cron/cleanup", "host": ["{{base_url}}"], "path": ["api", "cron", "cleanup"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "const json = pm.response.json();",
+                  "pm.test('Unauthorized error', () => pm.expect(json.success).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Cleanup - Wrong secret → 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer wrong-secret-xyz" }],
+            "url": { "raw": "{{base_url}}/api/cron/cleanup", "host": ["{{base_url}}"], "path": ["api", "cron", "cleanup"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 Cleanup - Valid auth → 200",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cron_secret}}" }],
+            "url": { "raw": "{{base_url}}/api/cron/cleanup", "host": ["{{base_url}}"], "path": ["api", "cron", "cleanup"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('has abandoned count', () => pm.expect(json.data.abandoned).to.be.a('number'));",
+                  "console.log('Abandoned payments cleaned up:', json.data.abandoned);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 Billing - No auth → 401",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/cron/billing", "host": ["{{base_url}}"], "path": ["api", "cron", "billing"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.5 Billing - Valid auth → 200",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cron_secret}}" }],
+            "url": { "raw": "{{base_url}}/api/cron/billing", "host": ["{{base_url}}"], "path": ["api", "cron", "billing"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('has summary counts', () => {",
+                  "  pm.expect(json.data.total).to.be.a('number');",
+                  "  pm.expect(json.data.created).to.be.a('number');",
+                  "  pm.expect(json.data.skipped).to.be.a('number');",
+                  "});",
+                  "console.log('Billing result:', JSON.stringify(json.data));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.6 Billing - Idempotency (run twice same day)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cron_secret}}" }],
+            "url": { "raw": "{{base_url}}/api/cron/billing", "host": ["{{base_url}}"], "path": ["api", "cron", "billing"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('created = 0 (idempotent — no duplicate invoices)', () => {",
+                  "  pm.expect(json.data.created).to.equal(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.7 Reconcile - Valid auth",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cron_secret}}" }],
+            "url": { "raw": "{{base_url}}/api/cron/reconcile", "host": ["{{base_url}}"], "path": ["api", "cron", "reconcile"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success true', () => pm.expect(json.success).to.be.true);",
+                  "console.log('Reconcile result:', JSON.stringify(json.data));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07. Webhooks - Refund",
+      "description": "Pre-request script auto-computes HMAC using shopify_api_secret env var. Make sure to set shopify_api_secret in the environment.",
+      "item": [
+        {
+          "name": "7.1 Refund webhook - Valid HMAC, order not in DB (skip)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Shopify-Topic", "value": "orders/refunded" },
+              { "key": "X-Shopify-Shop-Domain", "value": "{{shop_domain}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 999999999,\n  \"admin_graphql_api_id\": \"gid://shopify/Order/999999999\",\n  \"refunds\": [\n    {\n      \"id\": 111111111,\n      \"admin_graphql_api_id\": \"gid://shopify/Refund/111111111\",\n      \"note\": \"Test refund\",\n      \"transactions\": [\n        { \"id\": 1, \"amount\": \"100.00\" }\n      ]\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/webhooks/orders/refunded", "host": ["{{base_url}}"], "path": ["webhooks", "orders", "refunded"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const secret = pm.environment.get('shopify_api_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const hmac = CryptoJS.HmacSHA256(body, secret);",
+                  "const hmacBase64 = CryptoJS.enc.Base64.stringify(hmac);",
+                  "pm.request.headers.upsert({ key: 'X-Shopify-Hmac-SHA256', value: hmacBase64 });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Order not in DB → webhook returns 200 with skip (Shopify stops retrying)",
+                  "pm.test('Status 200 (idempotent skip)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 Refund webhook - Valid HMAC, real order (triggers bKash refund)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Shopify-Topic", "value": "orders/refunded" },
+              { "key": "X-Shopify-Shop-Domain", "value": "{{shop_domain}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 1,\n  \"admin_graphql_api_id\": \"{{completed_shopify_order_gid}}\",\n  \"refunds\": [\n    {\n      \"id\": 222222222,\n      \"admin_graphql_api_id\": \"gid://shopify/Refund/222222222\",\n      \"note\": \"Customer requested refund\",\n      \"transactions\": [\n        { \"id\": 2, \"amount\": \"{{test_subtotal}}\" }\n      ]\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/webhooks/orders/refunded", "host": ["{{base_url}}"], "path": ["webhooks", "orders", "refunded"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const secret = pm.environment.get('shopify_api_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const hmac = CryptoJS.HmacSHA256(body, secret);",
+                  "const hmacBase64 = CryptoJS.enc.Base64.stringify(hmac);",
+                  "pm.request.headers.upsert({ key: 'X-Shopify-Hmac-SHA256', value: hmacBase64 });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 (queued)', () => pm.response.to.have.status(200));",
+                  "// After ~5 seconds, check DB: Refund row should exist with status PENDING or COMPLETED"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 Refund webhook - Duplicate (idempotency)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Shopify-Topic", "value": "orders/refunded" },
+              { "key": "X-Shopify-Shop-Domain", "value": "{{shop_domain}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 1,\n  \"admin_graphql_api_id\": \"{{completed_shopify_order_gid}}\",\n  \"refunds\": [\n    {\n      \"id\": 222222222,\n      \"admin_graphql_api_id\": \"gid://shopify/Refund/222222222\",\n      \"note\": \"Customer requested refund\",\n      \"transactions\": [\n        { \"id\": 2, \"amount\": \"{{test_subtotal}}\" }\n      ]\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/webhooks/orders/refunded", "host": ["{{base_url}}"], "path": ["webhooks", "orders", "refunded"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const secret = pm.environment.get('shopify_api_secret');",
+                  "const body = pm.request.body.raw;",
+                  "const hmac = CryptoJS.HmacSHA256(body, secret);",
+                  "const hmacBase64 = CryptoJS.enc.Base64.stringify(hmac);",
+                  "pm.request.headers.upsert({ key: 'X-Shopify-Hmac-SHA256', value: hmacBase64 });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Same shopifyRefundId → should return 200 without double-refunding",
+                  "pm.test('Status 200 (idempotent)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 Refund webhook - Invalid HMAC → 401/403",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Shopify-Topic", "value": "orders/refunded" },
+              { "key": "X-Shopify-Shop-Domain", "value": "{{shop_domain}}" },
+              { "key": "X-Shopify-Hmac-SHA256", "value": "invalidsignatureabc123" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 1,\n  \"admin_graphql_api_id\": \"gid://shopify/Order/1\",\n  \"refunds\": []\n}"
+            },
+            "url": { "raw": "{{base_url}}/webhooks/orders/refunded", "host": ["{{base_url}}"], "path": ["webhooks", "orders", "refunded"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Rejected (401 or 403)', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([401, 403]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08. CORS / Security",
+      "item": [
+        {
+          "name": "8.1 OPTIONS /api/payment/initiate → CORS headers present",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              { "key": "Origin", "value": "https://{{shop_domain}}" },
+              { "key": "Access-Control-Request-Method", "value": "POST" }
+            ],
+            "url": { "raw": "{{base_url}}/api/payment/initiate", "host": ["{{base_url}}"], "path": ["api", "payment", "initiate"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Has Access-Control-Allow-Origin', () => {",
+                  "  pm.expect(pm.response.headers.get('Access-Control-Allow-Origin')).to.exist;",
+                  "});",
+                  "pm.test('Has Access-Control-Allow-Methods', () => {",
+                  "  pm.expect(pm.response.headers.get('Access-Control-Allow-Methods')).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.2 GET /api/payment/status/:id → CORS headers present",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Origin", "value": "https://{{shop_domain}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/payment/status/{{payment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payment", "status", "{{payment_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Has CORS header', () => {",
+                  "  pm.expect(pm.response.headers.get('Access-Control-Allow-Origin')).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.3 GET /api/storefront-config → returns token + appUrl",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Origin", "value": "https://{{shop_domain}}" },
+              { "key": "x-shop-domain", "value": "{{shop_domain}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/storefront-config", "host": ["{{base_url}}"], "path": ["api", "storefront-config"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('has storefrontToken', () => pm.expect(json.data.storefrontToken).to.be.a('string'));",
+                  "pm.test('has appUrl', () => pm.expect(json.data.appUrl).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09. OTP Flow (Manual — App UI only)",
+      "description": "OTP routes require authenticate.admin() (Shopify embedded app session). Cannot be called directly from Postman without a valid Shopify session cookie/token. Test these manually:\n\n1. Open your app in Shopify Admin → Settings page\n2. Click 'Update bKash Credentials'\n3. System sends OTP to merchant email\n4. VERIFY: OTP email arrives within 5 seconds\n5. Enter correct code → credentials saved, token cache invalidated\n6. VERIFY: GET /api/settings/bkash shows masked credentials\n7. Enter wrong code 3× → 'Too many attempts. Try again in 15 minutes.'\n8. Wait 2 min, enter expired OTP → 'OTP has expired'\n\nTo verify in DB (via psql or Prisma Studio):\n  SELECT * FROM otp_requests ORDER BY created_at DESC LIMIT 5;\n  SELECT bkash_app_key IS NOT NULL as configured FROM merchant_settings WHERE shop_domain = 'your-shop.myshopify.com';",
+      "item": [
+        {
+          "name": "9.1 GET bKash settings (masked credentials display)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/settings/bkash", "host": ["{{base_url}}"], "path": ["api", "settings", "bkash"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// This route may require Shopify admin auth — if 401, test via app UI instead",
+                  "console.log('Response status:', pm.response.code);",
+                  "console.log('Response body:', pm.response.text());"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "shop_domain", "value": "" },
+    { "key": "cron_secret", "value": "" },
+    { "key": "shopify_api_secret", "value": "" },
+    { "key": "shipping_handle", "value": "" },
+    { "key": "test_variant_id", "value": "" },
+    { "key": "test_subtotal", "value": "500" },
+    { "key": "valid_discount_code", "value": "" },
+    { "key": "payment_id", "value": "" },
+    { "key": "bkash_payment_id", "value": "" },
+    { "key": "completed_payment_id", "value": "" },
+    { "key": "completed_shopify_order_gid", "value": "" },
+    { "key": "completed_bkash_trx_id", "value": "" }
+  ]
+}
