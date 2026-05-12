@@ -1,0 +1,157 @@
+{% if cart.items != blank or request.design_mode %}
+  {% render 'checkout-form', section_details: block %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "Checkout Form",
+  "target": "section",
+  "templates": ["cart"],
+  "settings": [
+    {
+      "type": "header",
+      "content": "Content Layout"
+    },
+    {
+      "type": "text_alignment",
+      "id": "alignment",
+      "label": "Text alignment",
+      "default": "center"
+    },
+    {
+      "type": "header",
+      "content": "Heading Layout"
+    },
+    {
+      "type": "richtext",
+      "id": "heading",
+      "label": "Heading",
+      "default": "<h2>Complete Your Order</h2>"
+    },
+    {
+      "type": "select",
+      "id": "heading_level",
+      "label": "Heading level",
+      "default": "h2",
+      "options": [
+        { "value": "h1", "label": "H1" },
+        { "value": "h2", "label": "H2" },
+        { "value": "h3", "label": "H3" },
+        { "value": "h4", "label": "H4" },
+        { "value": "h5", "label": "H5" },
+        { "value": "h6", "label": "H6" }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "heading_font_size",
+      "label": "Heading Font size",
+      "min": 12,
+      "max": 80,
+      "step": 1,
+      "default": 32,
+      "unit": "px"
+    },
+    {
+      "type": "header",
+      "content": "Text Layout"
+    },
+    {
+      "type": "richtext",
+      "id": "text",
+      "label": "Text",
+      "default": "<p>Securely checkout with your information and pay with bKash</p>"
+    },
+    {
+      "type": "range",
+      "id": "text_font_size",
+      "label": "Text Font size",
+      "min": 12,
+      "max": 80,
+      "step": 1,
+      "default": 16,
+      "unit": "px"
+    },
+    {
+      "type": "header",
+      "content": "Customer Contact Layout",
+      "info": "The contact method customers enter at checkout will receive order and shipping notifications"
+    },
+    {
+      "type": "text",
+      "id": "contact_title",
+      "label": "Title",
+      "default": "Contact Information"
+    },
+    {
+      "type": "radio",
+      "id": "contact_selection",
+      "label": "Contact Method",
+      "options": [
+        {
+          "value": "both",
+          "label": "Phone number or email"
+        },
+        {
+          "value": "email",
+          "label": "Email (required)"
+        },
+        {
+          "value": "phone_number",
+          "label": "Phone number (required)"
+        }
+      ],
+      "default": "both",
+      "info": "An SMS App is required to send SMS updates"
+    },
+    {
+      "type": "header",
+      "content": "Customer Information Layout"
+    },
+    {
+      "type": "text",
+      "id": "customer_information_title",
+      "label": "Title",
+      "default": "Customer Information"
+    },
+    {
+      "type": "radio",
+      "id": "full_name",
+      "label": "Full Name",
+      "options": [
+        {
+          "value": "both",
+          "label": "First Name and Last Name"
+        },
+        {
+          "value": "first_name",
+          "label": "Only First Name"
+        }
+      ],
+      "default": "both"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_postal_code",
+      "label": "Show Postal Code",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Customer Shipping Details Layout"
+    },
+    {
+      "type": "text",
+      "id": "customer_shipping_details_title",
+      "label": "Title",
+      "default": "Shipping Methods"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_cart_discount",
+      "label": "Show Cart Discount",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

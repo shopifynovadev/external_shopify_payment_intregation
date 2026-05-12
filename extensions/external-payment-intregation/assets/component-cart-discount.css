@@ -1,0 +1,95 @@
+.cart-discount__input {
+  background-color: var(--color-input-background);
+  color: var(--color-input-text);
+  border-width: var(--style-border-width-inputs);
+  border-color: var(--color-input-border);
+  border-style: solid;
+  padding: 15px 10px;
+  width: 70%;
+  height: 100%;
+  flex-grow: 1;
+}
+
+.cart-discount__label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-2xs);
+  font-size: var(--cart-font-size--sm);
+}
+
+.cart-discount__pill-code {
+  overflow: hidden;
+  max-width: 100px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.cart-discount {
+  width: 100%;
+}
+
+.cart-discount__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cart-discount__codes {
+  display: none;
+  gap: var(--padding-xs);
+  flex-wrap: wrap;
+  list-style: none;
+  padding-inline: 0;
+  margin: 0;
+}
+
+.cart-discount__codes:has(.cart-discount__pill) {
+  display: flex;
+  margin-top: 10px;
+}
+
+.cart-discount__button {
+  height: 100%;
+  width: 29%;
+}
+
+.cart-discount__pill {
+  display: flex;
+  color: var(--color-foreground);
+  gap: 5px;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid black;
+  border-radius: 30px;
+  background-color: var(--color-input-background);
+  text-transform: uppercase;
+}
+
+.cart-discount__form {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+:is(.cart-discount__pill-remove, .cart-discount__pill-remove:hover) {
+  color: var(--color-foreground);
+  background-color: transparent;
+  pointer-events: all;
+  cursor: pointer;
+  border: none;
+  width: 15px;
+  height: 15px;
+}
+
+.cart-discount__error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+cart-discount-component {
+  display: flex;
+}

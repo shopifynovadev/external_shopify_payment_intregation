@@ -1,0 +1,275 @@
+.container {
+  width: 100%;
+}
+
+.checkout-header {
+  margin-bottom: 30px;
+}
+
+.checkout-header h2 {
+  margin-bottom: 10px;
+}
+
+.checkout-container {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.checkout-container input {
+  border: 1px solid gray;
+}
+
+.checkout-container select:focus,
+.checkout-container input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+@media (min-width: 990px) {
+  .checkout-container {
+    flex-direction: row;
+  }
+
+  .checkout-form {
+    flex: 7;
+  }
+
+  .order-summary {
+    flex: 5;
+  }
+}
+
+.checkout-card {
+  overflow: hidden;
+  margin-bottom: 25px;
+}
+
+.checkout-card .loading__spinner {
+  position: absolute;
+  right: 10px;
+}
+
+.form-group {
+  margin-bottom: 10px;
+}
+
+.form-control {
+  width: 100%;
+  padding: 12px 15px;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: all 0.3s;
+  background-color: rgb(var(--color-background));
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.container .loading__spinner,
+.container .svg-wrapper {
+  width: 20px;
+  height: 20px;
+}
+
+@media (min-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.shipping-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.shipping-method {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.shipping-method.selected {
+  background-color: rgba(94, 114, 228, 0.05);
+}
+
+.shipping-method input {
+  margin-right: 15px;
+}
+
+.shipping-price {
+  font-weight: 600;
+}
+
+.discount-section {
+  display: flex;
+  gap: 10px;
+}
+
+.discount-section input {
+  flex: 1;
+}
+
+.btn {
+  padding: 12px 25px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: none;
+}
+
+@media (min-width: 992px) {
+  .order-summary {
+    position: sticky;
+    top: 20px;
+  }
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.summary-row,
+.summary-total {
+  font-weight: 700;
+}
+
+.container .cartError p {
+  color: var(--cart-error);
+}
+
+#payWithBkash {
+  background-color: #e2136e;
+  padding: 20px;
+  margin: 20px 0;
+  text-align: center;
+  width: 100%;
+  font-weight: 700;
+  border: 2px solid #e2136e;
+  border-radius: 8px;
+  position: relative;
+}
+
+#payWithBkash:not(.loading) {
+  color: white;
+}
+
+#checkoutForm #payWithBkash .loading__spinner {
+  position: absolute;
+}
+
+#checkoutForm #payWithBkash .loading__spinner svg path {
+  color: white;
+}
+
+.bkash-logo {
+  height: 40px;
+  margin-bottom: 15px;
+}
+
+.secure-checkout {
+  text-align: center;
+  padding: 20px 0;
+  color: var(--gray);
+  font-size: 0.9rem;
+}
+
+.secure-checkout i {
+  margin-right: 5px;
+}
+
+.error-message {
+  font-size: 0.9rem;
+  margin-top: 5px;
+}
+
+.success-message {
+  font-size: 0.9rem;
+  margin-top: 5px;
+}
+
+.bkash-icon {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+#shippingMethods .shipping-methods-list {
+  padding: 0;
+  margin: 0;
+}
+
+#shippingMethods .shipping-methods-list .shipping-method {
+  width: 100%;
+  height: max-content;
+  position: relative;
+}
+
+#shippingMethods .shipping-methods-list .shipping-method .shipping-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex: 1;
+  padding: 15px;
+}
+
+.shipping-details h4 {
+  margin: 0;
+}
+
+.shipping-details p {
+  font-size: 1.4rem;
+}
+
+#shippingMethods .shipping-methods-list .shipping-method input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  z-index: 2;
+  cursor: pointer;
+}
+
+#shippingMethods .shipping-methods-list .shipping-method input:checked + .shipping-details {
+  border: 1px solid gray;
+  border-radius: 8px;
+}
+
+.cart__discount-label {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.cart__discount-label svg {
+  width: 12px;
+  height: 12px;
+}
+
+.cartError .loading__spinner,
+#checkoutForm .loading__spinner {
+  position: relative;
+}
+
+.cartError .loading__spinner {
+  display: flex;
+  margin: 0 auto;
+}
+
+.loading__spinner:not(.hidden) + span {
+  opacity: 0;
+}

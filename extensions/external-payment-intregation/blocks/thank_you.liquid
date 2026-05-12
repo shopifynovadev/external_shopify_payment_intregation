@@ -1,0 +1,299 @@
+{{ 'component-thank-you-content.css' | asset_url | stylesheet_tag }}
+
+<div class="container page-width">
+  <div>
+    {% comment %}404 page content{% endcomment %}
+    <div class="template-404 page-width page-margin center{% if  cart != empty %} hidden{% endif %}" {{ block.shopify_attributes }}>
+      {% if block.settings.subheading != blank %}
+        <p>
+          {{ block.settings.subheading }}
+        </p>
+      {% endif %}
+      {% if block.settings.heading != blank %}
+        <h1 class="title">
+          {{ block.settings.heading }}
+        </h1>
+      {% endif %}
+      <a href="{{ block.settings.error_button_link }}" class="button">
+        {{ block.settings.error_button_label }}
+      </a>
+    </div>
+    
+    {% comment %}Page Header{% endcomment %}
+    <div class="thank-you-content-header{% if  cart == empty %} hidden{% endif %}">
+      <div class="success-icon">
+        <svg class="checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+      </div>
+      <div class="details">
+        <p class="order-number">Confirmation <span class="order-id"></span></p>
+        <h1 class="thank-you">Thank you, Karson!</h1>        
+      </div>
+    </div>
+
+    <div class="grid thank-you-content{% if  cart == empty %} hidden{% endif %}">
+      {% comment %}Left Column{% endcomment %}
+      <div>
+        {% comment %}Order Confirmed Card{% endcomment %}
+        <div class="card confirmed-card">
+          <div class="card-content">
+            <h2 class="confirmed-text">Your order is confirmed</h2>
+            <p class="confirmed-subtext">You'll receive a confirmation email with your order number shortly.</p>
+          </div>
+        </div>
+
+        {% comment %}Order Details Card{% endcomment %}
+        <div class="card" style="margin-top: 1.5rem;">
+          <div class="card-header">
+            <h2 class="card-title">Order details</h2>
+          </div>
+          <div class="card-content">
+            <div class="details-grid">
+              <div class="detail-section">
+                <h3>Contact information</h3>
+                <div class="detail-text">
+                  <p class="customer-email">{%- render 'loading-spinner', class: "loading__spinner" -%}</p>
+                  <p class="customer-phone">{%- render 'loading-spinner', class: "loading__spinner" -%}</p>
+                </div>
+              </div>
+              <div class="detail-section">
+                <h3>Payment method</h3>
+                <div class="payment-method">
+                  <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                    <line x1="1" y1="10" x2="23" y2="10"></line>
+                  </svg>
+                  <span class="detail-text">Bkash</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="details-grid">
+              <div class="detail-section">
+                <h3>Shipping address</h3>
+                <div class="detail-text">
+                  {%- render 'loading-spinner', class: "loading__spinner" -%}
+                </div>
+              </div>
+              <div class="detail-section">
+                <h3>Billing address</h3>
+                <div class="detail-text">
+                  {%- render 'loading-spinner', class: "loading__spinner" -%}
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h3>Shipping method</h3>
+              <div class="shipping-method">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line>
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                  <polyline points="3.27,6.96 12,12.01 20.73,6.96"></polyline>
+                  <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                <span class="detail-text">{%- render 'loading-spinner', class: "loading__spinner" -%}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% comment %}Right Column{% endcomment %}
+      <div>
+        {% comment %}Order Summary Card{% endcomment %}
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Order summary</h2>
+          </div>
+          <div class="card-content">
+            {% comment %}Items{% endcomment %}
+            <div class="order-items">
+              {%- for item in cart.items -%}
+                <div class="item">
+                  {% if item.image %}
+                    <div class="cart-item__image-container gradient global-media-settings">
+                      <img
+                        src="{{ item.image | image_url: width: 300 }}"
+                        class="cart-item__image"
+                        alt="{{ item.image.alt | escape }}"
+                        loading="lazy"
+                        width="150"
+                        height="{{ 150 | divided_by: item.image.aspect_ratio | ceil }}"
+                      >
+                    </div>
+                    <div class="item-details">
+                      <p class="item-name">{{ item.product.title | escape }}</p>
+                      <p class="item-price">{{- item.product.price | money -}}</p>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+
+            {% comment %}Totals{% endcomment %}
+            <div class="order-totals">
+              <div class="total-row">
+                <span>Subtotal</span>
+                <span class="amount" data-subTotal="{{ cart.original_total_price }}">{{- cart.original_total_price | money -}}</span>
+              </div>
+              {% if cart.total_discount > 0 %}
+                <div class="discount-row">
+                  <span>Discount</span>
+                  <span class="amount" data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
+                </div>
+              {% endif %}
+              <div class="shipping-row">
+                <span>Shipping</span>
+                <span class="amount">Tk 30.00</span>
+              </div>
+              <div class="final-total">
+                <span>Total</span>
+                <span class="amount">{{- cart.original_total_price | money -}}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% comment %}Page actions{% endcomment %}
+        <div style="margin-top: 1.5rem;">
+          <a href="{{ routes.all_products_collection_url }}" class="button button--primary continue-button">Continue shopping</a>
+          <p class="help-text">Need help? <a href="/pages/contact" class="help-link">Contact us</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token').split('').reverse().join('');
+    const orderId = urlParams.get('order_id');
+
+    if (!token || !orderId) {
+      document.querySelector('.thank-you-content').classList.add("hidden");
+      document.querySelector('.thank-you-content-header').classList.add("hidden");
+      document.querySelector('.template-404').classList.remove("hidden");
+      return;
+    }
+
+    populateOrderDetails(orderId, token);
+    clearCartAndStorage(token);
+  });
+
+  function populateOrderDetails(orderId, token) {
+    const orderData = JSON.parse(localStorage.getItem(`cart-${token}`));
+    const subTotalElement = document.querySelector(".order-totals .total-row .amount");
+    const discountElement = document.querySelector(".order-totals .discount-row")?.querySelector(".amount");
+
+    if (!orderData) return;
+
+    {% comment %}Set Order ID from URL{% endcomment %}
+    document.querySelector('.order-id').textContent = `#${orderId}`;
+
+    {% comment %}Customer Name{% endcomment %}    
+    document.querySelector('.thank-you').textContent = `Thank you, ${orderData.first_name || 'Customer'}!`;
+
+    {% comment %}Contact Info{% endcomment %}
+    document.querySelector('.customer-email').textContent = orderData.email || '';
+    document.querySelector('.customer-phone').textContent = orderData.phone || '';
+
+    function renderAddress(sectionEl, data) {
+      sectionEl.innerHTML = `
+        <p>${data.first_name}</p>
+        <p>${data.address}</p>
+        <p>${data.city} ${data.zip}</p>
+        <p>${data.country}</p>
+        <p>${data.phone}</p>
+      `;
+    }
+
+    const addressSections = document.querySelectorAll('.detail-section .detail-text');
+    renderAddress(addressSections[2], orderData);
+    renderAddress(addressSections[3], orderData);
+
+    document.querySelectorAll(".thank-you-content .loading__spinner").forEach(element => {
+      element.classList.add("hidden");
+    });
+
+    const subTotalPrice = Number(subTotalElement?.dataset.subtotal || 0);
+    const discountValue = Number(discountElement?.dataset.discount || 0);
+    const shippingValue = Number(orderData.shipping_method.rate || 0);
+
+    const totalPrice = subTotalPrice + shippingValue - discountValue;
+
+    document.querySelector('.shipping-method .detail-text').textContent = orderData.shipping_method.title;
+    document.querySelector(".final-total .amount").innerText = `Tk ${(totalPrice / 100).toFixed(2)}`;
+    document.querySelector('.order-totals .shipping-row .amount').textContent = `Tk ${(orderData.shipping_method.rate/100).toFixed(2)}`;
+  }
+
+  const clearCartAndStorage = async (token) => {
+    await fetch(window.routes.cart_update_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        discount: ""
+      })
+    });
+    await fetch("/cart/clear.js", { method: "POST" });
+    localStorage.removeItem(`cart-${token}`);
+  };
+
+  {% comment %}Leave page or close tab — use visibilitychange for better compatibility{% endcomment %}
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      clearCartAndStorage();
+    }
+  });
+
+  {% comment %}Click any anchor tag (e.g. logo or home link){% endcomment %}
+  document.querySelectorAll("a").forEach((anchor) => {
+    anchor.addEventListener("click", (e) => {
+      clearCartAndStorage();
+    });
+  });
+
+</script>
+
+{% schema %}
+{
+  "name": "Thank Page Content",
+  "templates": ["page"],
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "404 Page Content Layout"
+    },
+    {
+      "type": "text",
+      "id": "subheading",
+      "label": "Sub-heading",
+      "default": "404"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Page Not Found"
+    },
+    {
+      "type": "text",
+      "id": "error_button_label",
+      "label": "Button Label",
+      "default": "Continue Shopping"
+    },
+    {
+      "type": "url",
+      "id": "error_button_link",
+      "label": "Button Link",
+      "default": "/collections/all"
+    }
+  ]
+}
+{% endschema %}

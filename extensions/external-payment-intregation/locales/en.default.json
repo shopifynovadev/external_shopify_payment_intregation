@@ -1,0 +1,14 @@
+{
+  "general": {
+    "discount_applied": "Apply",
+    "remove_discount": "Remove"
+  },
+  "sections": {
+    "all": {
+      "colors": {
+        "label": "Color scheme",
+        "has_cards_info": "To change the card color scheme, update your theme settings."
+      },
+    }
+  }
+}

@@ -1,0 +1,81 @@
+<cart-discount-component
+  data-section-id="{{ section.id }}"
+>
+  <accordion-custom class="cart-discount">
+    <details
+      class="details discount-details"
+      {% if discount_codes.size > 0 %}
+        open
+      {% endif %}
+      declarative-open
+    >
+      <summary class="cart-discount__summary">
+        <span class="cart-discount__label h6">Discount</span>
+
+        <span class="svg-wrapper icon-plus">
+          {% render 'icon-plus' %}
+        </span>
+      </summary>
+
+      <div class="details-content">
+        <div class="cart-discount__content">
+          <label
+            for="cart-discount"
+            class="visually-hidden"
+          >
+            Discount
+          </label>
+          <input
+            id="cart-discount"
+            class="cart-discount__input"
+            name="discount"
+            placeholder="Discount code"
+          >
+          <button
+            type="button"
+            class="button button--primary cart-discount__button"
+            on:click="/applyDiscount"
+          >
+            Apply
+          </button>
+        </div>
+        <div
+          class="cart-discount__error hidden"
+          role="alert"
+          ref="cartDiscountError"
+        >
+          <span class="svg-wrapper">
+            {% render 'icon-error' %}
+          </span>
+          <small
+            class="cart-discount__error-text cart-primary-typography"
+          >
+            <strong class="failed-discount-code"></strong> couldn't be used with your existing discounts.
+          </small>
+        </div>
+        <ul class="cart-discount__codes">
+          {% for discount_code in discount_codes %}
+            <li
+              class="cart-discount__pill"
+              data-discount-code="{{ discount_code }}"
+              aria-label="{{ 'general.discount_applied' | t: code: discount_code }}"
+            >
+              <p class="cart-discount__pill-code">
+                {{ discount_code }}
+              </p>
+              <button
+                type="button"
+                on:click="/removeDiscount"
+                class="cart-discount__pill-remove svg-wrapper svg-wrapper--smaller button-unstyled"
+                aria-label="{{ 'general.remove_discount' | t: code: discount_code }}"
+              >
+                {% render 'icon-filters-close' %}
+              </button>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </details>
+  </accordion-custom>
+</cart-discount-component>
+<script src="{{ 'cart-discount.js' | asset_url }}" defer="defer"></script>

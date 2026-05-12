@@ -1,0 +1,426 @@
+{{ 'checkout-form.css' | asset_url | stylesheet_tag }}
+{{ 'component-cart-discount.css' | asset_url | stylesheet_tag }}
+
+{% liquid
+  assign discount_codes = cart.cart_level_discount_applications | where: 'type', 'discount_code' | map: 'title'
+  for item in cart.items
+    for allocation in item.line_level_discount_allocations
+      if allocation.discount_application.type == 'discount_code'
+        assign discount_codes = item.line_level_discount_allocations | slice: forloop.index0 | map: 'discount_application' | map: 'title' | concat: discount_codes
+      endif
+    endfor
+  endfor
+
+  assign discount_codes = discount_codes | uniq
+  assign default_shipping_rate = settings.shipping_methods | last
+%}
+
+<div class="container">
+  <div class="cartError">
+    {%- render 'loading-spinner', class: "loading__spinner" -%}
+    <p class="center h3"></p>
+  </div>
+  <div class="checkout-header {{ section_details.settings.alignment }}">
+    {% if section_details.settings.heading != blank %}
+      {{ section_details.settings.heading }}
+    {% endif %}
+    {% if section_details.settings.text != blank %}
+      {{ section_details.settings.text }}
+    {% endif %}
+  </div>
+
+  <div class="checkout-container">
+    <div class="checkout-form">
+      <form id="checkoutForm">
+        {% comment %} Contact Information {% endcomment %}
+        <div class="checkout-card">
+          {% if section_details.settings.contact_title != blank %}
+            <h3 class="card-header">{{ section_details.settings.contact_title }}</h3>
+          {% endif %}
+          <div class="card-body">
+            {% if section_details.settings.contact_selection == "both" or section_details.settings.contact_selection == "email" %}
+              <div class="form-group">
+                <label for="email">Email<span style="color:red;">*</span></label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  class="form-control"
+                  placeholder="Email"
+                  required
+                  {% if customer.email %}
+                    value="{{ customer.email }}"
+                  {% endif %}
+                >
+              </div>
+            {% endif %}
+            {% if section_details.settings.contact_selection == "both" or section_details.settings.contact_selection == "phone_number" %}
+              <div class="form-group">
+                <label for="phone">Phone Number{%- if section_details.settings.contact_selection == "phone_number" -%}<span style="color:red;">*</span>{%- endif -%}</label>
+                <input
+                  type="tel"
+                  id="phone"
+                  name="phone" 
+                  class="form-control"
+                  placeholder="Phone Number"
+                  {%- if section_details.settings.contact_selection == "phone_number" -%}
+                    required
+                  {%- endif -%}
+                  {% if customer.phone %}
+                    value="{{ customer.phone }}"
+                  {% endif %}
+                >
+              </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {% comment %} Shipping Address {% endcomment %}
+        <div class="checkout-card">
+          {% if section_details.settings.customer_information_title != blank %}
+            <h3 class="card-header">{{ section_details.settings.customer_information_title }}</h3>
+          {% endif %}
+          <div class="card-body">
+            <div class="{% if section_details.settings.full_name == "both" %}form-row{% endif %}">
+              {% liquid
+                assign name_title = "First Name"
+                if section_details.settings.full_name == "first_name"
+                  assign name_title = "Full Name"
+                endif
+              %}
+              {% if section_details.settings.full_name == "both" or section_details.settings.full_name == "first_name" %}
+                <div class="form-group">
+                  <label for="firstName">{{ name_title }}<span style="color:red;">*</span></label>
+                  <input
+                    type="text"
+                    id="firstName"
+                    name="firstName"
+                    class="form-control"
+                    placeholder="{{ name_title }}"
+                    required
+                    {% if customer.first_name %}
+                      value="{{ customer.first_name }}"
+                    {% endif %}
+                  >
+                </div>
+              {% endif %}
+              {% if section_details.settings.full_name == "both" %}
+                <div class="form-group">
+                  <label for="lastName">Last Name<span style="color:red;">*</span></label>
+                  <input
+                    type="text"
+                    id="lastName"
+                    name="lastName"
+                    class="form-control"
+                    placeholder="Last Name"
+                    required
+                    {% if customer.last_name %}
+                      value="{{ customer.last_name }}"
+                    {% endif %}
+                  >
+                </div>
+              {% endif %}              
+            </div>
+
+            <div class="form-group">
+              <label for="address">Address<span style="color:red;">*</span></label>
+              <input type="text" id="address" name="address" class="form-control" placeholder="Address" required>
+            </div>
+
+            <div class="{% if section_details.settings.show_postal_code %}form-row{% endif %}">
+              <div class="form-group">
+                <label for="city">City<span style="color:red;">*</span></label>
+                <input type="text" id="city" name="city" class="form-control" placeholder="City" required>
+              </div>
+              {% if section_details.settings.show_postal_code %}
+                <div class="form-group">
+                  <label for="zip">ZIP/Postal Code<span style="color:red;">*</span></label>
+                  <input type="text" id="zip" name="zip" class="form-control" placeholder="Postal Code" required>
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="country">Country<span style="color:red;">*</span></label>
+                <select id="country" class="form-control" name="country" required>
+                  <option value="bangladesh" selected>Bangladesh</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% comment %} Shipping Method {% endcomment %}
+        <div class="checkout-card">
+          {% if section_details.settings.customer_shipping_details_title != blank %}
+            <h3 class="card-header">
+              {{ section_details.settings.customer_shipping_details_title }}
+            </h3>
+          {% endif %}
+          <div class="card-body">
+            <div class="shipping-methods" id="shippingMethods">
+              <ul class="shipping-methods-list">
+                {% assign shipping_metaobjects = shop.metaobjects.shipping_methods.values %}
+                {% for method in shipping_metaobjects %}
+                  <li class="shipping-method">
+                    <input type="radio" name="shippingMethod" data-location="{{ method.method_location }}" data-rate="{{ method.method_rate.value }}" value="{{ method.method_id }}" id="{{ method.method_title | split: " " | join: '-' | downcase }}" checked>
+                    <div class="shipping-details">
+                      <h4>{{ method.method_title }}</h4>
+                      <div class="shipping-price">{{ method.method_rate.value | money }}</div>
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="order-summary large-up-hide">
+          <div class="checkout-card">
+            <div class="card-body">
+              <div class="summary-row">
+                <span>Subtotal</span>
+                <div>
+                  {%- render 'loading-spinner' -%}
+                  <span id="subtotal-mobile" data-subTotal="{{ cart.original_total_price }}">{{- cart.original_total_price | money -}}</span>
+                </div>
+              </div>
+
+              <div class="summary-row">
+                <span>Shipping</span>
+                <div>
+                  {%- render 'loading-spinner' -%}
+                  <span id="shippingCost-mobile">{{ default_shipping_rate.method_rate.value | money }}</span>
+                </div>
+              </div>
+
+              {% if discount_codes.size > 0 %}
+                <div class="summary-row" id="discountRow-mobile">
+                  <span class="cart__discount-label">
+                    {% render 'icon-discount' %}
+                    Discount
+                  </span>
+                  <span class="cart__discount-value cart-secondary-typography">
+                    {%- render 'loading-spinner' -%}
+                    <span data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
+                  </span>
+                </div>
+              {% endif %}
+
+              <div class="summary-row summary-total">
+                <span>Total</span>
+                <div>
+                  {%- render 'loading-spinner' -%}
+                  <span id="total-mobile">{{- cart.total_price | plus: default_shipping_rate.method_rate.value | money -}}</span>
+                </div>
+              </div>
+            </div>
+
+            {% comment %} Discount Code {% endcomment %}
+            <div class="checkout-card">
+              {% if settings.show_cart_discount %}
+                {% render 'cart-discount', discount_codes: discount_codes %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% comment %} Payment Method {% endcomment %}
+        <div class="checkout-card">
+          <h3 class="card-header">
+            Payment Method
+          </h3>
+          <button type="submit" id="payWithBkash" class="button">
+            {% render "loading-spinner" %}
+            <span id="payText">Pay with bKash</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    {% comment %} Order Summary {% endcomment %}
+    <div class="order-summary small-hide medium-hide">
+      <div class="checkout-card">
+        <div class="card-body">
+          <div class="summary-row">
+            <span>Subtotal</span>
+            <div>
+              {%- render 'loading-spinner' -%}
+              <span id="subtotal" data-subTotal="{{ cart.original_total_price }}">{{- cart.original_total_price | money -}}</span>
+            </div>
+          </div>
+
+          <div class="summary-row">
+            <span>Shipping</span>
+            <div>
+              {%- render 'loading-spinner' -%}
+              <span id="shippingCost">{{ default_shipping_rate.method_rate.value | money }}</span>
+            </div>
+          </div>
+
+          {% if discount_codes.size > 0 %}
+            <div class="summary-row" id="discountRow">
+              <span class="cart__discount-label">
+                {% render 'icon-discount' %}
+                Discount
+              </span>
+              <span class="cart__discount-value cart-secondary-typography">
+                {%- render 'loading-spinner' -%}
+                <span data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
+              </span>
+            </div>
+          {% endif %}
+
+          <div class="summary-row summary-total">
+            <span>Total</span>
+            <div>
+              {%- render 'loading-spinner' -%}
+              <span id="total">{{- cart.total_price | plus: default_shipping_rate.method_rate.value | money -}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% comment %} Discount Code {% endcomment %}
+      <div class="checkout-card">
+        {% if section_details.settings.show_cart_discount %}
+          {% render 'cart-discount', discount_codes: discount_codes %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = document.querySelector("#checkoutForm");
+    if (!form) return;
+
+    const handleButtonLoading = (button, isDisabled) => {
+      button.disabled = isDisabled;
+      button.classList.add("loading");
+      button.querySelector(".loading__spinner").classList.remove("hidden");
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      handleButtonLoading(document.querySelector("#payWithBkash"), true);
+
+      const formData = new FormData(form);
+
+      {% comment %}Always get the most recent cart state{% endcomment %}
+      const cart = await fetch('/cart.js').then(res => res.json());
+
+      {% comment %}Get selected shipping method DOM element{% endcomment %}
+      const selectedShippingInput = document.querySelector('input[name="shippingMethod"]:checked');
+      const shippingRate = selectedShippingInput?.dataset?.rate;
+      const shippingTitle = selectedShippingInput?.nextElementSibling?.querySelector('h4')?.innerText;
+
+      const order_details = {
+        cart_details: cart,
+        shipping_details: {
+          email: formData.get("email"),
+          phone: formData.get("phone"),
+          first_name: formData.get("firstName"),
+          last_name: formData.get("lastName"),
+          address: formData.get("address"),
+          city: formData.get("city"),
+          zip: formData.get("zip"),
+          country: formData.get("country"),
+          countryCode: formData.get("country") === 'bangladesh' && "BD",
+          shipping_method: {
+            id: selectedShippingInput?.value,
+            title: shippingTitle,
+            rate: shippingRate
+          }
+        }
+      };
+
+      {% comment %}Store data in localStorage with token{% endcomment %}
+      if (cart.token) {
+        localStorage.setItem(`cart-${cart.token.split("?key=")[1]}`, JSON.stringify(order_details.shipping_details));
+      }
+
+      try {
+        const res = await fetch('{{ shop.metafields.custom.backend_app_url }}/api/bkash/payment/create', {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify(order_details)
+        });
+
+        const data = await res.json();
+        if (data?.bkashURL) {
+          window.location.href = data.bkashURL;
+        } else {
+          console.error('No bkashURL in response');
+        }
+      } catch (error) {
+        console.error('Payment error:', error);
+        handleButtonLoading(document.querySelector("#payWithBkash"), false);
+      }
+    });
+
+    {% comment %}RESTORE FORM DATA IF TOKEN & ERROR EXIST{% endcomment %}
+    const showCartErrorFromURL = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token')?.split('').reverse().join('');
+      const error = decodeURI(urlParams.get('error'));
+      const errorMessage = urlParams.get('message');
+
+      const errorContainer = document.querySelector('.container .cartError');
+      const errorElement = errorContainer?.querySelector("p");
+      const spinner = errorContainer?.querySelector('.loading__spinner');
+
+      if (token && error) {
+        const saved = localStorage.getItem(`cart-${token}`);
+        if (saved) {
+          {% comment %}Show error text{% endcomment %}
+          const errorText = errorMessage ? decodeURI(errorMessage) : window.cartError[error] || "Something went wrong. Please try again.";
+          if (errorElement) errorElement.textContent = errorText;
+
+          {% comment %}Load previous shipping details from localStorage{% endcomment %}
+          if (saved) {
+            const data = JSON.parse(saved);
+            if (data) {
+              form.querySelector('[name="email"]').value = data.email || "";
+              form.querySelector('[name="phone"]').value = data.phone || "";
+              form.querySelector('[name="firstName"]').value = data.first_name || "";
+              form.querySelector('[name="lastName"]').value = data.last_name || "";
+              form.querySelector('[name="address"]').value = data.address || "";
+              form.querySelector('[name="city"]').value = data.city || "";
+              form.querySelector('[name="zip"]').value = data.zip || "";
+              form.querySelector('[name="country"]').value = data.country || "";
+
+              const selectedShippingMethods = document.querySelector(`[value="${data.shipping_method.id}"]`);
+              selectedShippingMethods.checked = true;
+              window.updateShippingValues(selectedShippingMethods);
+            }
+          }
+        } else {
+          {% comment %}Invalid token — remove from URL{% endcomment %}
+          urlParams.delete('token');
+          urlParams.delete('error');
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }
+      }
+
+      {% comment %}Hide spinner{% endcomment %}
+      if (spinner) spinner.classList.add("hidden");
+    };
+
+    showCartErrorFromURL();
+
+    {% comment %}HANDLE SHIPPING METHOD CHANGES{% endcomment %}
+    const shippingInputs = document.querySelectorAll('input[name="shippingMethod"]');
+    shippingInputs.forEach(input => {
+      input.addEventListener('change', () => window.updateShippingValues(input));
+    });
+  });
+</script>
