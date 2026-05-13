@@ -21,9 +21,9 @@ export async function action({ request }) {
     return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const { shopDomain, shippingRate, discountCode, customerInfo, lineItems, subtotal } = body;
+  const { shopDomain, shippingRate, discountCode, customerInfo, lineItems, paymentPercentage } = body;
 
-  if (!shopDomain || !shippingRate?.code || shippingRate?.price == null || !customerInfo || !lineItems || subtotal == null) {
+  if (!shopDomain || !shippingRate?.code || !customerInfo || !lineItems?.length) {
     return Response.json({ success: false, error: "Missing required fields" }, { status: 400, headers: CORS_HEADERS });
   }
 
@@ -48,14 +48,21 @@ export async function action({ request }) {
       orderBy: { expires: "desc" },
     });
 
+    if (!session?.accessToken) {
+      return Response.json(
+        { success: false, error: "Store session not found. Please reinstall the app.", code: "NO_SESSION" },
+        { status: 422, headers: CORS_HEADERS }
+      );
+    }
+
     const result = await initiatePayment({
       shopDomain,
       shippingRate,
       discountCode: discountCode ?? null,
       customerInfo,
       lineItems,
-      subtotal: parseFloat(subtotal),
-      accessToken: session?.accessToken,
+      paymentPercentage: paymentPercentage ?? 100,
+      accessToken: session.accessToken,
     });
 
     return Response.json({ success: true, data: result }, { headers: CORS_HEADERS });

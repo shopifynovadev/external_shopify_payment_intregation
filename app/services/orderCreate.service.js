@@ -1,6 +1,6 @@
 import prisma from "../db.server.js";
 import { orderCreateQueue } from "../queues/index.js";
-import { executePayment, refundPayment } from "./bkash.service.js";
+import { refundPayment } from "./bkash.service.js";
 
 const DRAFT_ORDER_CREATE = `
   mutation DraftOrderCreate($input: DraftOrderInput!) {
@@ -141,21 +141,29 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
 
   const snap = pendingPayment.cartSnapshot;
 
-  // Hard reject if amounts don't match — prevents charging wrong amount
-  const difference = Math.abs(parseFloat(amount) - parseFloat(snap.total));
+  // Hard reject if amounts don't match — for partial payments compare chargedAmount, not full total
+  const expectedAmount = snap.chargedAmount ?? snap.total;
+  const difference = Math.abs(parseFloat(amount) - parseFloat(expectedAmount));
   if (difference > 0.01) {
     await prisma.pendingPayment.update({
       where: { id: pendingPaymentId },
-      data: { status: "FAILED", errorDetails: `Amount mismatch: expected ${snap.total}, got ${amount}` },
+      data: { status: "FAILED", errorDetails: `Amount mismatch: expected ${expectedAmount}, got ${amount}` },
     });
     // Auto-refund the bKash charge
-    await refundPayment({
+    const amountMismatchRefund = await refundPayment({
       shopDomain,
       paymentID: pendingPayment.bkashPaymentId,
       trxID: bkashTrxID,
       amount,
       reason: "Amount mismatch — auto refund",
     });
+    if (!amountMismatchRefund.success) {
+      console.error(`[CRITICAL] Refund failed for pendingPaymentId=${pendingPaymentId} reason=${amountMismatchRefund.reason}`);
+      await prisma.pendingPayment.update({
+        where: { id: pendingPaymentId },
+        data: { errorDetails: `Amount mismatch + REFUND_FAILED: ${amountMismatchRefund.reason}` },
+      });
+    }
     return;
   }
 
@@ -181,18 +189,16 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
     }
 
     if (!shopifyOrderData) {
+      // bKash payment was successful but Shopify order creation failed.
+      // Do NOT refund — merchant will handle manually via the Payment Issues tab.
       await prisma.pendingPayment.update({
         where: { id: pendingPaymentId },
-        data: { status: "FAILED", errorDetails: lastError?.message },
+        data: {
+          status: "ORDER_FAILED",
+          errorDetails: lastError?.message ?? "Shopify order creation failed after 3 attempts",
+        },
       });
-      // Auto-refund on Shopify failure (payment was taken from customer, no order created)
-      await refundPayment({
-        shopDomain,
-        paymentID: pendingPayment.bkashPaymentId,
-        trxID: bkashTrxID,
-        amount: snap.total,
-        reason: "Order creation failed — auto refund",
-      });
+      console.error(`[ORDER_FAILED] bKash paid but no Shopify order. pendingPaymentId=${pendingPaymentId} bkashTrxID=${bkashTrxID}`);
       return;
     }
 
