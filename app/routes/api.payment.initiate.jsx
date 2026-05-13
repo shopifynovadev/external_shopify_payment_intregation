@@ -1,4 +1,3 @@
-
 import prisma from "../db.server.js";
 import { initiatePayment } from "../services/payment.service.js";
 import { CORS_HEADERS, corsPrelight } from "../utils/cors.js";
@@ -21,14 +20,24 @@ export async function action({ request }) {
     return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const { shopDomain, shippingRate, discountCode, customerInfo, lineItems, subtotal } = body;
+  const { shopDomain, shippingRate, shippingSource = "db", discountCode, customerInfo, lineItems } = body;
 
-  if (!shopDomain || !shippingRate?.code || shippingRate?.price == null || !customerInfo || !lineItems || subtotal == null) {
+  if (!shopDomain || !customerInfo || !lineItems?.length) {
     return Response.json({ success: false, error: "Missing required fields" }, { status: 400, headers: CORS_HEADERS });
   }
 
   if (!customerInfo.name || !customerInfo.phone || !customerInfo.address?.division || !customerInfo.address?.district) {
     return Response.json({ success: false, error: "Incomplete customer info" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  // DB path still requires a shipping rate code
+  if (shippingSource === "db" && !shippingRate?.code) {
+    return Response.json({ success: false, error: "Missing shipping rate" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  // Shopify path requires expectedTotal so we can verify against live rates
+  if (shippingSource === "shopify" && shippingRate?.expectedTotal == null) {
+    return Response.json({ success: false, error: "Missing expectedTotal in shippingRate" }, { status: 400, headers: CORS_HEADERS });
   }
 
   try {
@@ -51,10 +60,10 @@ export async function action({ request }) {
     const result = await initiatePayment({
       shopDomain,
       shippingRate,
+      shippingSource,
       discountCode: discountCode ?? null,
       customerInfo,
       lineItems,
-      subtotal: parseFloat(subtotal),
       accessToken: session?.accessToken,
     });
 

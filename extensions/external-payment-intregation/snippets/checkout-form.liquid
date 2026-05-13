@@ -16,7 +16,9 @@
   assign default_shipping_rate = settings.shipping_methods | last
 %}
 
-<div class="container" id="checkout-form_bkash-cart-block">
+<div class="container" id="checkout-form_bkash-cart-block"
+     data-app-url="{{ shop.metafields.nova_bkash.app_url.value }}"
+     data-shop="{{ shop.myshopify_domain }}">
   <div class="cartError">
     {%- render 'loading-spinner', class: "loading__spinner" -%}
     <p class="center h3"></p>
@@ -166,29 +168,12 @@
           </div>
         </div>
 
-        {% comment %} Shipping Method {% endcomment %}
-        <div class="checkout-card">
+        {% comment %} Shipping Method — rendered by cart-payment.js from Shopify delivery profiles {% endcomment %}
+        <div class="checkout-card" id="checkout-form_shipping-section" style="display:none;">
           {% if section_details.settings.customer_shipping_details_title != blank %}
-            <h3 class="card-header">
-              {{ section_details.settings.customer_shipping_details_title }}
-            </h3>
+            <h3 class="card-header">{{ section_details.settings.customer_shipping_details_title }}</h3>
           {% endif %}
-          <div class="card-body">
-            <div class="shipping-methods" id="shippingMethods">
-              <ul class="shipping-methods-list">
-                {% assign shipping_metaobjects = shop.metaobjects.shipping_methods.values %}
-                {% for method in shipping_metaobjects %}
-                  <li class="shipping-method">
-                    <input type="radio" name="shippingMethod" data-location="{{ method.method_location }}" data-rate="{{ method.method_rate.value }}" value="{{ method.method_id }}" id="{{ method.method_title | split: " " | join: '-' | downcase }}" checked>
-                    <div class="shipping-details">
-                      <h4>{{ method.method_title }}</h4>
-                      <div class="shipping-price">{{ method.method_rate.value | money }}</div>
-                    </div>
-                  </li>
-                {% endfor %}
-              </ul>
-            </div>
-          </div>
+          <div class="card-body" id="checkout-form_shipping-rates"></div>
         </div>
 
         <div class="order-summary large-up-hide">
@@ -330,10 +315,12 @@
       {% comment %}Always get the most recent cart state{% endcomment %}
       const cart = await fetch('/cart.js').then(res => res.json());
 
-      {% comment %}Get selected shipping method DOM element{% endcomment %}
+      {% comment %}Get selected named shipping rate (rendered by cart-payment.js){% endcomment %}
       const selectedShippingInput = document.querySelector('input[name="shippingMethod"]:checked');
-      const shippingRate = selectedShippingInput?.dataset?.rate;
-      const shippingTitle = selectedShippingInput?.nextElementSibling?.querySelector('h4')?.innerText;
+      const namedRatePrice = parseFloat(selectedShippingInput?.dataset?.rate ?? 0);
+      const namedRateTitle = selectedShippingInput?.closest('.checkout-form_rate-option')?.dataset?.title ?? '';
+      const weightShipping = window.CheckoutBkashForm?.weightShipping ?? 0;
+      const totalShipping = weightShipping + namedRatePrice;
 
       const order_details = {
         cart_details: cart,
@@ -350,9 +337,9 @@
           countryCode: formData.get("country") === 'bangladesh' && "BD",
           payment_details: formData.get("nova_selected_plan"),
           shipping_method: {
-            id: selectedShippingInput?.value,
-            title: shippingTitle,
-            rate: shippingRate
+            id: selectedShippingInput?.value ?? 'weight',
+            title: namedRateTitle || 'Weight-based shipping',
+            rate: totalShipping
           }
         }
       };
@@ -453,11 +440,13 @@
       own summary panel stays in sync too.
     {% endcomment %}
     window.updateShippingValues = (inputEl) => {
-      {% comment %}If called without an argument (e.g. from cart-discount.js),
-         fall back to whichever radio is currently checked.{% endcomment %}
-      const input = inputEl ?? document.querySelector('input[name="shippingMethod"]:checked');
-
-      const shippingRate  = parseFloat(input?.dataset?.rate ?? 0);
+      {% comment %}
+        Shipping = weight-based (auto-calc by cart-payment.js) + selected named rate.
+        inputEl param kept for backward-compat callers but not used for rate lookup.
+      {% endcomment %}
+      const weightRate = window.CheckoutBkashForm?.weightShipping ?? 0;
+      const namedRate  = window.CheckoutBkashForm?.selectedRate?.price ?? 0;
+      const shippingRate = weightRate + namedRate;
       const subtotalCents = parseInt(
         document.getElementById('subtotal')?.dataset?.subTotal ??
         document.getElementById('subtotal-mobile')?.dataset?.subTotal ?? 0,
@@ -507,11 +496,8 @@
       }
     };
 
-    {% comment %}HANDLE SHIPPING METHOD CHANGES{% endcomment %}
-    const shippingInputs = document.querySelectorAll('input[name="shippingMethod"]');
-    shippingInputs.forEach(input => {
-      input.addEventListener('change', () => window.updateShippingValues(input));
-    });
+    {% comment %}Shipping radio change events are bound inside cart-payment.js renderNamedRates()
+       because the options are rendered asynchronously after DOMContentLoaded.{% endcomment %}
 
     {% comment %}
       CART MUTATION OBSERVER (checkout-form side)

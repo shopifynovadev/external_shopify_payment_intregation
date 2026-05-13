@@ -5,20 +5,20 @@
       this.appUrl = el.dataset.appUrl;
       this.shopDomain = el.dataset.shop;
       this.cartData = null;
-      this.selectedRate = null; // { code, title, price }
+      this.selectedRate = null; // { title, price } — named rate picked by user
+      this.weightShipping = 0;  // auto-calculated from item weights
+      this.weightRates = {};    // { kg: price } from Shopify delivery profiles
       this.discountCode = null;
       this.discountAmount = 0;
       this.discountApplied = false;
 
-      // Debounce timer for MutationObserver cart sync
       this._cartSyncTimer = null;
-      // MutationObserver instance
       this._cartObserver = null;
 
       this.$ = (id) => document.getElementById(id);
       // this.init();
 
-      this.fetchShippingRates();
+      this.loadCartAndShipping();
     }
 
     async init() {
@@ -33,25 +33,138 @@
       }
     }
 
+    // ─── Cart + Shipping Bootstrap ────────────────────────────────────────────
+
+    async loadCartAndShipping() {
+      await this.loadCart();
+      await this.loadShippingConfig();
+    }
+
+    // ─── Cookie Helpers ───────────────────────────────────────────────────────
+
+    getCookie(name) {
+      const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+      return m ? decodeURIComponent(m[2]) : null;
+    }
+
+    setCookie(name, value, days) {
+      const exp = new Date(Date.now() + days * 864e5).toUTCString();
+      document.cookie = `${name}=${encodeURIComponent(value)};expires=${exp};path=/;SameSite=Lax`;
+    }
+
+    clearCookie(name) {
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`;
+    }
+
+    // ─── Shipping Config ──────────────────────────────────────────────────────
+
+    async loadShippingConfig() {
+      if (!this.appUrl || !this.shopDomain) return;
+
+      const cached = this.getCookie("nova_sc");
+      if (cached) {
+        try {
+          this.applyShippingConfig(JSON.parse(cached));
+          return;
+        } catch {
+          this.clearCookie("nova_sc");
+        }
+      }
+
+      try {
+        const res = await fetch(`${this.appUrl}/api/shipping/config?shop=${this.shopDomain}`);
+        const json = await res.json();
+        if (!json.success) return;
+        // 2-day cache — merchant rate changes caught at payment time via SHIPPING_RATE_CHANGED
+        this.setCookie("nova_sc", JSON.stringify(json.data), 2);
+        this.applyShippingConfig(json.data);
+      } catch {
+        // Silent fail — shipping section stays hidden
+      }
+    }
+
+    applyShippingConfig(config) {
+      const bdRates = config.BD ?? {};
+      const weightRates = {};
+      const namedRates = {};
+
+      for (const [key, price] of Object.entries(bdRates)) {
+        if (!isNaN(Number(key))) {
+          weightRates[Number(key)] = price;
+        } else {
+          namedRates[key] = price;
+        }
+      }
+
+      this.weightRates = weightRates;
+      this.weightShipping = this.calculateWeightShipping();
+      this.renderNamedRates(namedRates);
+
+      // Notify the Liquid summary to update the shipping display
+      if (typeof window.updateShippingValues === "function") {
+        window.updateShippingValues();
+      }
+    }
+
+    calculateWeightShipping() {
+      if (!this.cartData) return 0;
+      let total = 0;
+      for (const item of this.cartData.items) {
+        const kg = item.grams / 1000;
+        const rate = this.weightRates[kg];
+        if (rate != null) total += rate * item.quantity;
+      }
+      return parseFloat(total.toFixed(2));
+    }
+
+    renderNamedRates(namedRates) {
+      const section = this.$("checkout-form_shipping-section");
+      const container = this.$("checkout-form_shipping-rates");
+      if (!section || !container) return;
+
+      const entries = Object.entries(namedRates);
+
+      if (entries.length === 0) {
+        // Weight-only: show the section only to display the auto-calculated cost
+        if (this.weightShipping > 0) section.style.display = "block";
+        return;
+      }
+
+      section.style.display = "block";
+      container.innerHTML = entries.map(([title, price]) => `
+        <label class="checkout-form_rate-option" data-title="${title}" data-price="${price}">
+          <input type="radio" name="shippingMethod" value="${title}" data-rate="${price}" style="margin:0;" />
+          <span style="flex:1;">${title}</span>
+          <strong>৳${parseFloat(price).toFixed(2)}</strong>
+        </label>
+      `).join("");
+
+      container.querySelectorAll(".checkout-form_rate-option").forEach((el) => {
+        el.addEventListener("click", () => {
+          container.querySelectorAll(".checkout-form_rate-option").forEach(e => e.classList.remove("selected"));
+          el.classList.add("selected");
+          el.querySelector("input").checked = true;
+          this.selectedRate = {
+            title: el.dataset.title,
+            price: parseFloat(el.dataset.price),
+          };
+          if (typeof window.updateShippingValues === "function") {
+            window.updateShippingValues();
+          }
+          this.validateForm();
+        });
+      });
+    }
+
     // ─── Cart Observer ────────────────────────────────────────────────────────
 
-    /**
-     * MutationObserver — watches the theme's own cart content sections.
-     * When the theme re-renders quantities/removals via Section Rendering API,
-     * we detect the DOM change and re-sync our summary from /cart.js.
-     *
-     * Targets both the cart items list and the cart footer (where totals live),
-     * since different themes update different containers.
-     */
     setupCartObserver() {
-      // Common cart content selectors across Dawn-based themes.
-      // We try each and observe the first one found.
       const candidates = [
-        '#main-cart-items',
-        '#main-cart-footer',
-        '.cart__items',
-        '[data-cart-items]',
-        'cart-items',
+        "#main-cart-items",
+        "#main-cart-footer",
+        ".cart__items",
+        "[data-cart-items]",
+        "cart-items",
       ];
 
       const targets = candidates
@@ -61,8 +174,6 @@
       if (targets.length === 0) return;
 
       this._cartObserver = new MutationObserver(() => {
-        // Debounce: the theme may do several DOM writes in one update cycle.
-        // Wait until it's settled before re-fetching.
         clearTimeout(this._cartSyncTimer);
         this._cartSyncTimer = setTimeout(() => this.syncCartFromTheme(), 300);
       });
@@ -72,45 +183,35 @@
       });
     }
 
-    /**
-     * Called after the MutationObserver fires (debounced).
-     * Re-fetches the live cart and updates our summary.
-     * Preserves discount state — the cart DOM change doesn't affect discounts.
-     */
     async syncCartFromTheme() {
       try {
-        const res = await fetch('/cart.js');
+        const res = await fetch("/cart.js");
         const cart = await res.json();
         this.cartData = cart;
 
         if (cart.item_count === 0) {
           this.showBanner("Your cart is empty.", "info");
-          this.$("checkout-form_pay-btn").disabled = true;
+          const btn = this.$("checkout-form_pay-btn");
+          if (btn) btn.disabled = true;
         } else {
-          // Re-validate form in case pay button was disabled due to empty cart
           this.validateForm();
         }
 
+        // Recalculate weight shipping with updated cart
+        this.weightShipping = this.calculateWeightShipping();
         this.updateSummary();
       } catch {
-        // Silent fail — cart summary just stays as-is
+        // Silent fail
       }
     }
 
     // ─── Discount Event Listener ──────────────────────────────────────────────
 
-    /**
-     * cart-discount.js dispatches 'discount:update' on document after every
-     * apply or remove. The event detail contains the full Shopify cart response
-     * including updated total_price and total_discount — so we don't need an
-     * extra /cart.js fetch here.
-     */
     listenForDiscountEvents() {
-      document.addEventListener('discount:update', (e) => {
+      document.addEventListener("discount:update", (e) => {
         const data = e.detail?.data;
         if (!data) return;
 
-        // Update our local cartData with the fresh totals from the discount response
         this.cartData = {
           ...this.cartData,
           total_price: data.total_price,
@@ -120,11 +221,7 @@
           items: data.items ?? this.cartData?.items,
         };
 
-        // Reflect Shopify-applied discount amount into our summary.
-        // cart-discount.js handles Shopify native discount codes via /cart/update.
-        // We read total_discount directly from the cart response.
         this.discountAmount = (data.total_discount ?? 0) / 100;
-
         this.updateSummary();
       });
     }
@@ -137,7 +234,8 @@
       if (!json.success) throw new Error("Payment not configured for this store");
       if (!json.data.isPaymentConfigured) {
         this.showBanner("bKash payment is not configured by the store owner.", "warning");
-        this.$("checkout-form_pay-btn").disabled = true;
+        const btn = this.$("checkout-form_pay-btn");
+        if (btn) btn.disabled = true;
       }
     }
 
@@ -146,79 +244,11 @@
       this.cartData = await res.json();
       if (this.cartData.item_count === 0) {
         this.showBanner("Your cart is empty.", "info");
-        this.$("checkout-form_pay-btn").disabled = true;
+        const btn = this.$("checkout-form_pay-btn");
+        if (btn) btn.disabled = true;
         return;
       }
       this.updateSummary();
-    }
-
-    // ─── Shipping ─────────────────────────────────────────────────────────────
-
-    async fetchShippingRates() {
-      // const district = this.$("checkout-form_district").value.trim();
-      // const division = this.$("checkout-form_division").value;
-
-      // if (!district || !division) {
-      //   this.showBanner("Please fill in Division and District before fetching shipping rates.", "warning");
-      //   return;
-      // }
-
-      // this.setShippingRatesLoading(true);
-
-      const params = new URLSearchParams({
-        "shipping_address[country]": "Bangladesh"
-      });
-
-      try {
-        const res = await fetch(`/cart/shipping_rates.json?${params}`);
-        const json = await res.json();
-        this.setShippingRatesLoading(false);
-        this.renderShippingRates(json.shipping_rates ?? []);
-      } catch {
-        this.setShippingRatesLoading(false);
-        this.showBanner("Could not fetch shipping rates. Please try again.", "error");
-      }
-    }
-
-    renderShippingRates(rates) {
-      const container = this.$("checkout-form_shipping-rates");
-      this.$("checkout-form_shipping-section").style.display = "block";
-
-      if (rates.length === 0) {
-        container.innerHTML = `<p style="color:#d72c0d;font-size:13px;">No shipping rates available for this address.</p>`;
-        return;
-      }
-
-      container.innerHTML = rates.map((rate) => `
-        <label class="checkout-form_rate-option" data-code="${rate.code}" data-price="${rate.price}" data-title="${rate.name}">
-          <input type="radio" name="checkout-form_shipping-rate" value="${rate.code}" style="margin:0;" />
-          <span style="flex:1;">${rate.name}</span>
-          <strong>৳${parseFloat(rate.price).toFixed(2)}</strong>
-        </label>
-      `).join("");
-
-      container.querySelectorAll(".checkout-form_rate-option").forEach((el) => {
-        el.addEventListener("click", () => {
-          container.querySelectorAll(".checkout-form_rate-option").forEach((e) => e.classList.remove("selected"));
-          el.classList.add("selected");
-          el.querySelector("input").checked = true;
-          this.selectedRate = {
-            code: el.dataset.code,
-            title: el.dataset.title,
-            price: parseFloat(el.dataset.price),
-          };
-          this.updateSummary();
-          this.validateForm();
-        });
-      });
-    }
-
-    setShippingRatesLoading(loading) {
-      const container = this.$("checkout-form_shipping-rates");
-      if (loading) {
-        container.innerHTML = `<p style="color:#6d7175;font-size:13px;">Fetching rates...</p>`;
-      }
-      this.$("checkout-form_shipping-section").style.display = "block";
     }
 
     // ─── Discount (Nova/bKash backend validation) ─────────────────────────────
@@ -260,12 +290,22 @@
     // ─── Summary ──────────────────────────────────────────────────────────────
 
     updateSummary() {
+      const subtotalEl = this.$("checkout-form_subtotal");
+      if (!subtotalEl) {
+        // Summary elements not rendered (init() still commented out) —
+        // delegate to the Liquid inline summary instead
+        if (typeof window.updateShippingValues === "function") {
+          window.updateShippingValues();
+        }
+        return;
+      }
+
       const subtotal = this.cartData ? this.cartData.total_price / 100 : 0;
-      const shipping = this.selectedRate?.price ?? 0;
+      const shipping = this.weightShipping + (this.selectedRate?.price ?? 0);
       const discount = this.discountAmount;
       const total = Math.max(0, subtotal + shipping - discount);
 
-      this.$("checkout-form_subtotal").textContent = `৳${subtotal.toFixed(2)}`;
+      subtotalEl.textContent = `৳${subtotal.toFixed(2)}`;
       this.$("checkout-form_shipping-cost").textContent = shipping > 0 ? `৳${shipping.toFixed(2)}` : "—";
       this.$("checkout-form_total").textContent = `৳${total.toFixed(2)}`;
 
@@ -277,21 +317,27 @@
         discountRow.style.display = "none";
       }
 
-      this.$("checkout-form_summary").style.display = "block";
+      const summary = this.$("checkout-form_summary");
+      if (summary) summary.style.display = "block";
     }
 
     // ─── Form Validation ──────────────────────────────────────────────────────
 
     validateForm() {
-      const name = this.$("checkout-form_name").value.trim();
-      const phone = this.$("checkout-form_phone").value.trim();
-      const district = this.$("checkout-form_district").value.trim();
-      const thana = this.$("checkout-form_thana").value.trim();
-      const street = this.$("checkout-form_street").value.trim();
-      const hasShipping = !!this.selectedRate;
+      const name = this.$("checkout-form_name")?.value.trim();
+      const phone = this.$("checkout-form_phone")?.value.trim();
+      const district = this.$("checkout-form_district")?.value.trim();
+      const thana = this.$("checkout-form_thana")?.value.trim();
+      const street = this.$("checkout-form_street")?.value.trim();
+
+      // Named rate required only if named rate options are present
+      const hasNamedOptions = (this.$("checkout-form_shipping-rates")
+        ?.querySelectorAll('input[type="radio"]').length ?? 0) > 0;
+      const hasShipping = !hasNamedOptions || !!this.selectedRate;
 
       const valid = name && phone && district && thana && street && hasShipping;
-      this.$("checkout-form_pay-btn").disabled = !valid;
+      const btn = this.$("checkout-form_pay-btn");
+      if (btn) btn.disabled = !valid;
     }
 
     // ─── Payment ──────────────────────────────────────────────────────────────
@@ -305,7 +351,6 @@
       const thana = this.$("checkout-form_thana").value.trim();
       const street = this.$("checkout-form_street").value.trim();
 
-      const subtotal = this.cartData.total_price / 100;
       const lineItems = this.cartData.items.map((item) => ({
         variantId: `gid://shopify/ProductVariant/${item.variant_id}`,
         quantity: item.quantity,
@@ -320,11 +365,14 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shopDomain: this.shopDomain,
-          shippingRate: this.selectedRate,
+          shippingSource: "shopify",
+          shippingRate: {
+            title: this.selectedRate?.title ?? null,
+            expectedTotal: this.weightShipping + (this.selectedRate?.price ?? 0),
+          },
           discountCode: this.discountCode,
           customerInfo: { name, phone, email, address: { division, district, thana, street } },
           lineItems,
-          subtotal,
         }),
       });
 
@@ -335,7 +383,10 @@
         window.location.href = json.data.redirectUrl;
       } else {
         this.setProcessing(false);
-        this.showBanner(`Payment failed: ${json.error}`, "error");
+        if (json.code === "SHIPPING_RATE_CHANGED") {
+          this.clearCookie("nova_sc");
+        }
+        this.showBanner(json.error, "error");
       }
     }
 
@@ -358,12 +409,15 @@
     // ─── UI Helpers ───────────────────────────────────────────────────────────
 
     setProcessing(on) {
-      this.$("checkout-form_form").style.display = on ? "none" : "block";
-      this.$("checkout-form_processing").style.display = on ? "block" : "none";
+      const form = this.$("checkout-form_form");
+      const processing = this.$("checkout-form_processing");
+      if (form) form.style.display = on ? "none" : "block";
+      if (processing) processing.style.display = on ? "block" : "none";
     }
 
     showBanner(msg, type) {
       const el = this.$("checkout-form_banner");
+      if (!el) return;
       const colors = {
         error:   { bg: "#fff4f4", border: "#fda29b", text: "#912018" },
         warning: { bg: "#fffaeb", border: "#fec84b", text: "#92400e" },
@@ -381,14 +435,12 @@
     // ─── Event Binding ────────────────────────────────────────────────────────
 
     bindEvents() {
-      this.$("checkout-form_fetch-shipping-btn")?.addEventListener("click", () => this.fetchShippingRates());
-      this.$("checkout-form_apply-discount").addEventListener("click", () => this.applyDiscount());
-      this.$("checkout-form_pay-btn").addEventListener("click", () => this.pay());
+      this.$("checkout-form_apply-discount")?.addEventListener("click", () => this.applyDiscount());
+      this.$("checkout-form_pay-btn")?.addEventListener("click", () => this.pay());
 
       const addressFields = ["checkout-form_district", "checkout-form_thana", "checkout-form_street", "checkout-form_division"];
       addressFields.forEach((id) => {
         this.$(id)?.addEventListener("change", () => {
-          this.$("checkout-form_fetch-shipping-wrap").style.display = "block";
           this.selectedRate = null;
           this.validateForm();
         });
@@ -403,8 +455,6 @@
   document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("checkout-form_bkash-cart-block");
     if (el) {
-      // Expose instance on window so checkout-form.liquid's
-      // window.updateShippingValues can notify us of shipping changes too.
       window.CheckoutBkashForm = new CheckoutBkashForm(el);
     }
   });
