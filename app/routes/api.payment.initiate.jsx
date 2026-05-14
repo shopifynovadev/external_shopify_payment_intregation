@@ -20,24 +20,33 @@ export async function action({ request }) {
     return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const { shopDomain, shippingRate, shippingSource = "db", discountCode, customerInfo, lineItems } = body;
+  const { shopDomain, shippingRate, discountCode, customerInfo, lineItems, paymentPercentage } = body;
 
   if (!shopDomain || !customerInfo || !lineItems?.length) {
     return Response.json({ success: false, error: "Missing required fields" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  if (!/^[a-zA-Z0-9-]+\.myshopify\.com$/.test(shopDomain)) {
+    return Response.json({ success: false, error: "Invalid shop domain" }, { status: 400, headers: CORS_HEADERS });
   }
 
   if (!customerInfo.name || !customerInfo.phone || !customerInfo.address?.division || !customerInfo.address?.district) {
     return Response.json({ success: false, error: "Incomplete customer info" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  // DB path still requires a shipping rate code
-  if (shippingSource === "db" && !shippingRate?.code) {
-    return Response.json({ success: false, error: "Missing shipping rate" }, { status: 400, headers: CORS_HEADERS });
+  const BD_PHONE_RE = /^(\+?8801|01)[0-9]{9}$/;
+  if (!BD_PHONE_RE.test(customerInfo.phone)) {
+    return Response.json({ success: false, error: "Invalid phone number format" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  // Shopify path requires expectedTotal so we can verify against live rates
-  if (shippingSource === "shopify" && shippingRate?.expectedTotal == null) {
-    return Response.json({ success: false, error: "Missing expectedTotal in shippingRate" }, { status: 400, headers: CORS_HEADERS });
+  if (customerInfo.name.length > 100) {
+    return Response.json({ success: false, error: "Name too long (max 100 characters)" }, { status: 400, headers: CORS_HEADERS });
+  }
+  if ((customerInfo.address.street ?? "").length > 200) {
+    return Response.json({ success: false, error: "Street address too long (max 200 characters)" }, { status: 400, headers: CORS_HEADERS });
+  }
+  if (discountCode && discountCode.length > 50) {
+    return Response.json({ success: false, error: "Discount code too long (max 50 characters)" }, { status: 400, headers: CORS_HEADERS });
   }
 
   try {
@@ -57,6 +66,13 @@ export async function action({ request }) {
       orderBy: { expires: "desc" },
     });
 
+    if (!session?.accessToken) {
+      return Response.json(
+        { success: false, error: "Store session not found. Please reinstall the app.", code: "NO_SESSION" },
+        { status: 422, headers: CORS_HEADERS }
+      );
+    }
+
     const result = await initiatePayment({
       shopDomain,
       shippingRate,
@@ -64,7 +80,8 @@ export async function action({ request }) {
       discountCode: discountCode ?? null,
       customerInfo,
       lineItems,
-      accessToken: session?.accessToken,
+      paymentPercentage: paymentPercentage ?? 100,
+      accessToken: session.accessToken,
     });
 
     return Response.json({ success: true, data: result }, { headers: CORS_HEADERS });

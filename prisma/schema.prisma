@@ -66,6 +66,7 @@ enum PaymentStatus {
   AWAITING_EXECUTE
   COMPLETED
   FAILED
+  ORDER_FAILED
   ABANDONED
   REFUNDED
 }
@@ -121,6 +122,8 @@ model Order {
 
   bkashTransactionId String      @unique
   totalAmount        Decimal     @db.Decimal(12, 2)
+  paidAmount         Decimal     @db.Decimal(12, 2)
+  paymentPercentage  Int         @default(100)
   currency           String      @default("BDT")
   status             OrderStatus @default(PAID)
 

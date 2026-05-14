@@ -1,6 +1,6 @@
 import prisma from "../db.server.js";
 import { orderCreateQueue } from "../queues/index.js";
-import { executePayment, refundPayment } from "./bkash.service.js";
+import { refundPayment } from "./bkash.service.js";
 
 const DRAFT_ORDER_CREATE = `
   mutation DraftOrderCreate($input: DraftOrderInput!) {
@@ -51,8 +51,14 @@ async function adminGraphQL({ shopDomain, accessToken, query, variables }) {
 async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bkashTrxID }) {
   const snap = pendingPayment.cartSnapshot;
   const customer = pendingPayment.customerInfo;
+  const pct = snap.paymentPercentage ?? 100;
+  const paidAmount = snap.chargedAmount ?? snap.total;
+  const isFullPayment = pct === 100;
 
-  // Build draft order input
+  const paymentNote = isFullPayment
+    ? `bKash Transaction ID: ${bkashTrxID}`
+    : `bKash Transaction ID: ${bkashTrxID}\nPaid via bKash: ৳${paidAmount} of ৳${snap.total} (${pct}%)\nRemaining balance: ৳${parseFloat((snap.total - paidAmount).toFixed(2))}`;
+
   const input = {
     lineItems: snap.lineItems.map((item) => ({
       variantId: item.variantId,
@@ -66,15 +72,16 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
       firstName: customer.name.split(" ")[0],
       lastName: customer.name.split(" ").slice(1).join(" ") || "-",
       phone: customer.phone,
-      address1: customer.address.street,
-      city: customer.address.thana,
-      provinceCode: customer.address.district,
+      address1: customer.address.street ?? "-",
+      city: customer.address.district,
       countryCode: "BD",
       zip: "0000",
     },
     email: customer.email ?? undefined,
-    tags: [`nova-bkash`, `bkash-trx:${bkashTrxID}`],
-    note: `bKash Transaction ID: ${bkashTrxID}`,
+    tags: isFullPayment
+      ? [`nova-bkash`, `bkash-trx:${bkashTrxID}`]
+      : [`nova-bkash`, `bkash-trx:${bkashTrxID}`, `partial-payment-${pct}pct`],
+    note: paymentNote,
     ...(snap.discountCode
       ? {
           appliedDiscount: {
@@ -87,7 +94,6 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
       : {}),
   };
 
-  // Create draft order
   const createData = await adminGraphQL({
     shopDomain,
     accessToken,
@@ -100,7 +106,6 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
 
   const draftOrderId = createData.draftOrderCreate.draftOrder.id;
 
-  // Complete draft order
   const completeData = await adminGraphQL({
     shopDomain,
     accessToken,
@@ -113,15 +118,17 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
 
   const order = completeData.draftOrderComplete.draftOrder.order;
 
-  // Mark order as paid
-  await adminGraphQL({
-    shopDomain,
-    accessToken,
-    query: ORDER_MARK_PAID,
-    variables: { input: { id: order.id } },
-  });
+  // Only mark as paid when customer paid 100% — partial payments stay "Pending" in Shopify
+  if (isFullPayment) {
+    await adminGraphQL({
+      shopDomain,
+      accessToken,
+      query: ORDER_MARK_PAID,
+      variables: { input: { id: order.id } },
+    });
+  }
 
-  return { shopifyOrderId: order.id, shopifyOrderNumber: order.name, shopifyDraftOrderId: draftOrderId };
+  return { shopifyOrderId: order.id, shopifyOrderNumber: order.name, shopifyDraftOrderId: draftOrderId, paidAmount, paymentPercentage: pct };
 }
 
 export async function processOrderCreation({ pendingPaymentId, shopDomain, bkashTrxID, amount }) {
@@ -141,21 +148,29 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
 
   const snap = pendingPayment.cartSnapshot;
 
-  // Hard reject if amounts don't match — prevents charging wrong amount
-  const difference = Math.abs(parseFloat(amount) - parseFloat(snap.total));
+  // Hard reject if amounts don't match — for partial payments compare chargedAmount, not full total
+  const expectedAmount = snap.chargedAmount ?? snap.total;
+  const difference = Math.abs(parseFloat(amount) - parseFloat(expectedAmount));
   if (difference > 0.01) {
     await prisma.pendingPayment.update({
       where: { id: pendingPaymentId },
-      data: { status: "FAILED", errorDetails: `Amount mismatch: expected ${snap.total}, got ${amount}` },
+      data: { status: "FAILED", errorDetails: `Amount mismatch: expected ${expectedAmount}, got ${amount}` },
     });
     // Auto-refund the bKash charge
-    await refundPayment({
+    const amountMismatchRefund = await refundPayment({
       shopDomain,
       paymentID: pendingPayment.bkashPaymentId,
       trxID: bkashTrxID,
       amount,
       reason: "Amount mismatch — auto refund",
     });
+    if (!amountMismatchRefund.success) {
+      console.error(`[CRITICAL] Refund failed for pendingPaymentId=${pendingPaymentId} reason=${amountMismatchRefund.reason}`);
+      await prisma.pendingPayment.update({
+        where: { id: pendingPaymentId },
+        data: { errorDetails: `Amount mismatch + REFUND_FAILED: ${amountMismatchRefund.reason}` },
+      });
+    }
     return;
   }
 
@@ -181,22 +196,20 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
     }
 
     if (!shopifyOrderData) {
+      // bKash payment was successful but Shopify order creation failed.
+      // Do NOT refund — merchant will handle manually via the Payment Issues tab.
       await prisma.pendingPayment.update({
         where: { id: pendingPaymentId },
-        data: { status: "FAILED", errorDetails: lastError?.message },
+        data: {
+          status: "ORDER_FAILED",
+          errorDetails: lastError?.message ?? "Shopify order creation failed after 3 attempts",
+        },
       });
-      // Auto-refund on Shopify failure (payment was taken from customer, no order created)
-      await refundPayment({
-        shopDomain,
-        paymentID: pendingPayment.bkashPaymentId,
-        trxID: bkashTrxID,
-        amount: snap.total,
-        reason: "Order creation failed — auto refund",
-      });
+      console.error(`[ORDER_FAILED] bKash paid but no Shopify order. pendingPaymentId=${pendingPaymentId} bkashTrxID=${bkashTrxID}`);
       return;
     }
 
-    const { shopifyOrderId, shopifyOrderNumber, shopifyDraftOrderId } = shopifyOrderData;
+    const { shopifyOrderId, shopifyOrderNumber, shopifyDraftOrderId, paidAmount, paymentPercentage } = shopifyOrderData;
 
     // Persist order and upsert daily summary atomically
     await prisma.$transaction(async (tx) => {
@@ -209,6 +222,8 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
           pendingPaymentId,
           bkashTransactionId: bkashTrxID,
           totalAmount: snap.total,
+          paidAmount,
+          paymentPercentage,
           status: "PAID",
           customerName: pendingPayment.customerInfo.name,
           customerPhone: pendingPayment.customerInfo.phone,

@@ -9,6 +9,7 @@
       this.discountCode = null;
       this.discountAmount = 0;
       this.discountApplied = false;
+      this.paymentPercentage = 100; // frontend dev can set to 25 or 50 via setPaymentPercentage()
 
       this.$ = (id) => document.getElementById(id);
       this.init();
@@ -56,18 +57,22 @@
 
       this.setShippingRatesLoading(true);
 
+      const subtotal = this.cartData ? this.cartData.total_price / 100 : 0;
       const params = new URLSearchParams({
-        "shipping_address[country]": "Bangladesh",
-        "shipping_address[province]": division,
-        "shipping_address[city]": district,
-        "shipping_address[zip]": "",
+        shop: this.shopDomain,
+        division,
+        total: subtotal,
       });
 
       try {
-        const res = await fetch(`/cart/shipping_rates.json?${params}`);
+        const res = await fetch(`${this.appUrl}/api/shipping/rates?${params}`);
         const json = await res.json();
         this.setShippingRatesLoading(false);
-        this.renderShippingRates(json.shipping_rates ?? []);
+        if (!json.success) {
+          this.showBanner("Could not fetch shipping rates. Please try again.", "error");
+          return;
+        }
+        this.renderShippingRates(json.data ?? []);
       } catch {
         this.setShippingRatesLoading(false);
         this.showBanner("Could not fetch shipping rates. Please try again.", "error");
@@ -84,10 +89,10 @@
       }
 
       container.innerHTML = rates.map((rate) => `
-        <label class="nova-rate-option" data-code="${rate.code}" data-price="${rate.price}" data-title="${rate.name}">
-          <input type="radio" name="nova-shipping-rate" value="${rate.code}" style="margin:0;" />
-          <span style="flex:1;">${rate.name}</span>
-          <strong>৳${parseFloat(rate.price).toFixed(2)}</strong>
+        <label class="nova-rate-option" data-code="${rate.id}" data-price="${rate.price}" data-title="${rate.title}">
+          <input type="radio" name="nova-shipping-rate" value="${rate.id}" style="margin:0;" />
+          <span style="flex:1;">${rate.title}${rate.estimatedDays ? ` (${rate.estimatedDays} days)` : ""}</span>
+          <strong>${rate.isFree ? "Free" : `৳${parseFloat(rate.price).toFixed(2)}`}</strong>
         </label>
       `).join("");
 
@@ -153,11 +158,14 @@
       const subtotal = this.cartData ? this.cartData.total_price / 100 : 0;
       const shipping = this.selectedRate?.price ?? 0;
       const discount = this.discountAmount;
-      const total = Math.max(0, subtotal + shipping - discount);
+      const fullTotal = Math.max(0, subtotal + shipping - discount);
+      const chargedNow = parseFloat((fullTotal * (this.paymentPercentage ?? 100) / 100).toFixed(2));
 
       this.$("nova-subtotal").textContent = `৳${subtotal.toFixed(2)}`;
       this.$("nova-shipping-cost").textContent = shipping > 0 ? `৳${shipping.toFixed(2)}` : "—";
-      this.$("nova-total").textContent = `৳${total.toFixed(2)}`;
+      this.$("nova-total").textContent = this.paymentPercentage < 100
+        ? `৳${chargedNow.toFixed(2)} (${this.paymentPercentage}% of ৳${fullTotal.toFixed(2)})`
+        : `৳${fullTotal.toFixed(2)}`;
 
       const discountRow = this.$("nova-discount-row");
       if (discount > 0) {
@@ -182,6 +190,16 @@
       this.$("nova-pay-btn").disabled = !valid;
     }
 
+    setPaymentPercentage(pct) {
+      const allowed = [25, 50, 100];
+      if (!allowed.includes(Number(pct))) {
+        this.showBanner("Invalid payment option. Choose 25%, 50%, or 100%.", "error");
+        return;
+      }
+      this.paymentPercentage = Number(pct);
+      this.updateSummary();
+    }
+
     async pay() {
       const name = this.$("nova-name").value.trim();
       const phone = this.$("nova-phone").value.trim();
@@ -191,12 +209,11 @@
       const thana = this.$("nova-thana").value.trim();
       const street = this.$("nova-street").value.trim();
 
-      const subtotal = this.cartData.total_price / 100;
       const lineItems = this.cartData.items.map((item) => ({
         variantId: `gid://shopify/ProductVariant/${item.variant_id}`,
         quantity: item.quantity,
         title: item.title,
-        price: item.price / 100,
+        price: item.price / 100,  // sent for fraud detection — backend verifies against Shopify
       }));
 
       this.setProcessing(true);
@@ -210,7 +227,7 @@
           discountCode: this.discountCode,
           customerInfo: { name, phone, email, address: { division, district, thana, street } },
           lineItems,
-          subtotal,
+          paymentPercentage: this.paymentPercentage ?? 100,
         }),
       });
 
