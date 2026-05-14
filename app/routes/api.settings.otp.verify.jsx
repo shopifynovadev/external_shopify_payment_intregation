@@ -12,14 +12,13 @@ export async function action({ request }) {
   try {
     body = await request.json();
   } catch {
-    return ({ success: false, error: "Invalid JSON body" }, { status: 400 });
+    return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { otp, credentials } = body;
-  // credentials: { bkashNumber, bkashUsername, bkashPassword, bkashAppKey, bkashAppSecret, bkashApiBaseUrl }
 
   if (!otp || !credentials) {
-    return ({ success: false, error: "Missing otp or credentials" }, { status: 400 });
+    return Response.json({ success: false, error: "Missing otp or credentials" }, { status: 400 });
   }
 
   const otpResult = await verifyOtp({
@@ -29,24 +28,22 @@ export async function action({ request }) {
   });
 
   if (!otpResult.valid) {
-    return ({ success: false, error: otpResult.reason }, { status: 422 });
+    return Response.json({ success: false, error: otpResult.reason }, { status: 422 });
   }
 
-  // Encrypt each credential field
   const updates = {};
   if (credentials.bkashNumber) updates.bkashNumber = encrypt(credentials.bkashNumber);
   if (credentials.bkashUsername) updates.bkashUsername = encrypt(credentials.bkashUsername);
   if (credentials.bkashPassword) updates.bkashPassword = encrypt(credentials.bkashPassword);
   if (credentials.bkashAppKey) updates.bkashAppKey = encrypt(credentials.bkashAppKey);
   if (credentials.bkashAppSecret) updates.bkashAppSecret = encrypt(credentials.bkashAppSecret);
-  if (credentials.bkashApiBaseUrl) updates.bkashApiBaseUrl = credentials.bkashApiBaseUrl; // URL, not encrypted
+  if (credentials.bkashApiBaseUrl) updates.bkashApiBaseUrl = credentials.bkashApiBaseUrl;
 
   await prisma.merchantSettings.update({
     where: { shopDomain: session.shop },
     data: updates,
   });
 
-  // Invalidate cached bKash token so next payment uses fresh credentials
   invalidateToken(session.shop);
 
   await prisma.auditLog.create({
@@ -58,5 +55,5 @@ export async function action({ request }) {
     },
   });
 
-  return ({ success: true, data: { updated: true } });
+  return Response.json({ success: true, data: { updated: true } });
 }

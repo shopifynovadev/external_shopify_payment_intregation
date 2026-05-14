@@ -51,8 +51,14 @@ async function adminGraphQL({ shopDomain, accessToken, query, variables }) {
 async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bkashTrxID }) {
   const snap = pendingPayment.cartSnapshot;
   const customer = pendingPayment.customerInfo;
+  const pct = snap.paymentPercentage ?? 100;
+  const paidAmount = snap.chargedAmount ?? snap.total;
+  const isFullPayment = pct === 100;
 
-  // Build draft order input
+  const paymentNote = isFullPayment
+    ? `bKash Transaction ID: ${bkashTrxID}`
+    : `bKash Transaction ID: ${bkashTrxID}\nPaid via bKash: ৳${paidAmount} of ৳${snap.total} (${pct}%)\nRemaining balance: ৳${parseFloat((snap.total - paidAmount).toFixed(2))}`;
+
   const input = {
     lineItems: snap.lineItems.map((item) => ({
       variantId: item.variantId,
@@ -66,15 +72,16 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
       firstName: customer.name.split(" ")[0],
       lastName: customer.name.split(" ").slice(1).join(" ") || "-",
       phone: customer.phone,
-      address1: customer.address.street,
-      city: customer.address.thana,
-      provinceCode: customer.address.district,
+      address1: customer.address.street ?? "-",
+      city: customer.address.district,
       countryCode: "BD",
       zip: "0000",
     },
     email: customer.email ?? undefined,
-    tags: [`nova-bkash`, `bkash-trx:${bkashTrxID}`],
-    note: `bKash Transaction ID: ${bkashTrxID}`,
+    tags: isFullPayment
+      ? [`nova-bkash`, `bkash-trx:${bkashTrxID}`]
+      : [`nova-bkash`, `bkash-trx:${bkashTrxID}`, `partial-payment-${pct}pct`],
+    note: paymentNote,
     ...(snap.discountCode
       ? {
           appliedDiscount: {
@@ -87,7 +94,6 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
       : {}),
   };
 
-  // Create draft order
   const createData = await adminGraphQL({
     shopDomain,
     accessToken,
@@ -100,7 +106,6 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
 
   const draftOrderId = createData.draftOrderCreate.draftOrder.id;
 
-  // Complete draft order
   const completeData = await adminGraphQL({
     shopDomain,
     accessToken,
@@ -113,15 +118,17 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
 
   const order = completeData.draftOrderComplete.draftOrder.order;
 
-  // Mark order as paid
-  await adminGraphQL({
-    shopDomain,
-    accessToken,
-    query: ORDER_MARK_PAID,
-    variables: { input: { id: order.id } },
-  });
+  // Only mark as paid when customer paid 100% — partial payments stay "Pending" in Shopify
+  if (isFullPayment) {
+    await adminGraphQL({
+      shopDomain,
+      accessToken,
+      query: ORDER_MARK_PAID,
+      variables: { input: { id: order.id } },
+    });
+  }
 
-  return { shopifyOrderId: order.id, shopifyOrderNumber: order.name, shopifyDraftOrderId: draftOrderId };
+  return { shopifyOrderId: order.id, shopifyOrderNumber: order.name, shopifyDraftOrderId: draftOrderId, paidAmount, paymentPercentage: pct };
 }
 
 export async function processOrderCreation({ pendingPaymentId, shopDomain, bkashTrxID, amount }) {
@@ -202,7 +209,7 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
       return;
     }
 
-    const { shopifyOrderId, shopifyOrderNumber, shopifyDraftOrderId } = shopifyOrderData;
+    const { shopifyOrderId, shopifyOrderNumber, shopifyDraftOrderId, paidAmount, paymentPercentage } = shopifyOrderData;
 
     // Persist order and upsert daily summary atomically
     await prisma.$transaction(async (tx) => {
@@ -215,6 +222,8 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
           pendingPaymentId,
           bkashTransactionId: bkashTrxID,
           totalAmount: snap.total,
+          paidAmount,
+          paymentPercentage,
           status: "PAID",
           customerName: pendingPayment.customerInfo.name,
           customerPhone: pendingPayment.customerInfo.phone,

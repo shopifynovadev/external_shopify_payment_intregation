@@ -13,7 +13,12 @@ scopes = "read_orders,write_orders,read_draft_orders,write_draft_orders,read_pro
 redirect_urls = [ "https://example.com/api/auth" ]
 
 [webhooks]
-api_version = "2026-07"
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
 
 [build]
 automatically_update_urls_on_dev = true

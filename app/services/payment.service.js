@@ -42,8 +42,6 @@ async function fetchVariantPrices({ shopDomain, accessToken, lineItems }) {
   return priceMap;
 }
 
-const ALLOWED_PERCENTAGES = [25, 50, 100];
-
 export async function initiatePayment({
   shopDomain,
   shippingRate,
@@ -53,8 +51,9 @@ export async function initiatePayment({
   paymentPercentage = 100,
   accessToken,
 }) {
-  if (!ALLOWED_PERCENTAGES.includes(Number(paymentPercentage))) {
-    throw Object.assign(new Error("Invalid payment percentage. Allowed: 25, 50, 100"), { code: "INVALID_PERCENTAGE" });
+  const pct = Number(paymentPercentage);
+  if (isNaN(pct) || pct <= 0 || pct > 100) {
+    throw Object.assign(new Error("paymentPercentage must be a number between 1 and 100"), { code: "INVALID_PERCENTAGE" });
   }
   // Idempotency: if a PENDING payment from the same customer phone within last 5 min, return it
   const existing = await prisma.pendingPayment.findFirst({
@@ -112,8 +111,7 @@ export async function initiatePayment({
   const total = parseFloat((subtotal + shippingPrice - discountAmount).toFixed(2));
   if (total <= 0) throw Object.assign(new Error("Invalid total amount"), { code: "INVALID_AMOUNT" });
 
-  const percentage = Number(paymentPercentage);
-  const chargedAmount = parseFloat((total * percentage / 100).toFixed(2));
+  const chargedAmount = parseFloat((total * pct / 100).toFixed(2));
 
   const idempotencyKey = makeIdempotencyKey(customerInfo.phone, shopDomain);
 
@@ -135,7 +133,7 @@ export async function initiatePayment({
     discountCode: discountValid ? discountCode : null,
     discountAmount,
     total,
-    paymentPercentage: percentage,
+    paymentPercentage: pct,
     chargedAmount,
     bkashURL,
   };

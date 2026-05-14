@@ -23,12 +23,31 @@ export async function action({ request }) {
 
   const { shopDomain, shippingRate, discountCode, customerInfo, lineItems, paymentPercentage } = body;
 
-  if (!shopDomain || !shippingRate?.code || !customerInfo || !lineItems?.length) {
+  if (!shopDomain || !customerInfo || !lineItems?.length) {
     return Response.json({ success: false, error: "Missing required fields" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  if (!/^[a-zA-Z0-9-]+\.myshopify\.com$/.test(shopDomain)) {
+    return Response.json({ success: false, error: "Invalid shop domain" }, { status: 400, headers: CORS_HEADERS });
   }
 
   if (!customerInfo.name || !customerInfo.phone || !customerInfo.address?.division || !customerInfo.address?.district) {
     return Response.json({ success: false, error: "Incomplete customer info" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  const BD_PHONE_RE = /^(\+?8801|01)[0-9]{9}$/;
+  if (!BD_PHONE_RE.test(customerInfo.phone)) {
+    return Response.json({ success: false, error: "Invalid phone number format" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  if (customerInfo.name.length > 100) {
+    return Response.json({ success: false, error: "Name too long (max 100 characters)" }, { status: 400, headers: CORS_HEADERS });
+  }
+  if ((customerInfo.address.street ?? "").length > 200) {
+    return Response.json({ success: false, error: "Street address too long (max 200 characters)" }, { status: 400, headers: CORS_HEADERS });
+  }
+  if (discountCode && discountCode.length > 50) {
+    return Response.json({ success: false, error: "Discount code too long (max 50 characters)" }, { status: 400, headers: CORS_HEADERS });
   }
 
   try {
