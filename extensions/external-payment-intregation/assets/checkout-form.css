@@ -100,23 +100,6 @@
   gap: 15px;
 }
 
-.shipping-method {
-  display: flex;
-  align-items: center;
-  padding: 15px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.shipping-method.selected {
-  background-color: rgba(94, 114, 228, 0.05);
-}
-
-.shipping-method input {
-  margin-right: 15px;
-}
-
 .shipping-price {
   font-weight: 600;
 }
@@ -217,47 +200,12 @@
   margin-bottom: 10px;
 }
 
-#shippingMethods .shipping-methods-list {
-  padding: 0;
-  margin: 0;
-}
-
-#shippingMethods .shipping-methods-list .shipping-method {
-  width: 100%;
-  height: max-content;
-  position: relative;
-}
-
-#shippingMethods .shipping-methods-list .shipping-method .shipping-details {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex: 1;
-  padding: 15px;
-}
-
 .shipping-details h4 {
   margin: 0;
 }
 
 .shipping-details p {
   font-size: 1.4rem;
-}
-
-#shippingMethods .shipping-methods-list .shipping-method input {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  opacity: 0;
-  z-index: 2;
-  cursor: pointer;
-}
-
-#shippingMethods .shipping-methods-list .shipping-method input:checked + .shipping-details {
-  border: 1px solid gray;
-  border-radius: 8px;
 }
 
 .cart__discount-label {
@@ -284,4 +232,201 @@
 
 .loading__spinner:not(.hidden) + span {
   opacity: 0;
+}
+
+/* ============================================================
+  Nova bKash — Payment Options Block
+  Matches the card-style radio selector from the design mockup
+  ============================================================ */
+
+.checkout-form_payment-options {
+  width: 100%;
+  font-family: inherit;
+}
+
+.checkout-form_payment-options__label {
+  color: #4a5568;
+  text-transform: uppercase;
+  margin: 0 0 10px 0;
+}
+
+/* ---- Grid ------------------------------------------------- */
+
+.checkout-form_payment-options__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Distribute evenly based on how many options are active.
+   JS does NOT need to know — we use CSS :has() where supported,
+   with a data-attribute fallback for broader browser support.   */
+
+.checkout-form_payment-options__grid[data-option-count] .checkout-form_payment-option { flex: 1 1 100%; }
+.checkout-form_payment-options__grid[data-option-count="2"] .checkout-form_payment-option { flex: 1 1 calc(50% - 5px); }
+.checkout-form_payment-options__grid[data-option-count="3"] .checkout-form_payment-option { flex: 1 1 calc(24% - 7px); }
+.checkout-form_payment-options__grid[data-option-count="4"] .checkout-form_payment-option { flex: 1 1 calc(50% - 5px); }
+
+/* ---- Individual option card ------------------------------- */
+
+.checkout-form_payment-option {
+  position: relative;
+  cursor: pointer;
+  min-width: 0;               /* prevent flex overflow */
+}
+
+/* Hide the native radio visually but keep it accessible */
+.checkout-form_payment-option__input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.checkout-form_payment-option__card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+  min-height: 56px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* Hover state */
+.checkout-form_payment-option:hover .checkout-form_payment-option__card {
+  border-color: #c6d8f5;
+  background: #f8fbff;
+}
+
+/* Selected state */
+.checkout-form_payment-option__input:checked + .checkout-form_payment-option__card {
+  border-color: #3b7de8;
+  background: #f0f6ff;
+  box-shadow: 0 0 0 1px #3b7de8, 0 2px 6px rgba(59,125,232,0.12);
+}
+
+/* Focus-visible ring for keyboard accessibility */
+.checkout-form_payment-option__input:focus-visible + .checkout-form_payment-option__card {
+  outline: 3px solid #3b7de8;
+  outline-offset: 2px;
+}
+
+/* ---- Custom radio dot ------------------------------------- */
+
+.checkout-form_payment-option__radio-dot {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e0;
+  background: #fff;
+  position: relative;
+  transition: border-color 0.15s ease;
+}
+
+.checkout-form_payment-option__radio-dot::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #3b7de8;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__radio-dot {
+  border-color: #3b7de8;
+}
+
+.checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__radio-dot::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ---- Icon ------------------------------------------------- */
+
+.checkout-form_payment-option__icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #718096;
+  transition: color 0.15s ease;
+}
+
+.checkout-form_payment-option__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__icon {
+  color: #3b7de8;
+}
+
+/* ---- Text (title + amount) -------------------------------- */
+
+.checkout-form_payment-option__text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.checkout-form_payment-option__title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+}
+
+.checkout-form_payment-option__amount {
+  font-size: 12px;
+  color: #718096;
+  transition: color 0.15s ease;
+}
+
+.checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__amount {
+  color: #3b7de8;
+}
+
+/* ---- Responsive ------------------------------------------- */
+
+@media (max-width: 480px) {
+  /* Always 2-column on narrow screens regardless of count */
+  .checkout-form_payment-options__grid[data-option-count="3"] .checkout-form_payment-option {
+    flex: 1 1 calc(50% - 5px);
+  }
+
+  .checkout-form_payment-option__card {
+    padding: 9px 10px;
+    gap: 7px;
+  }
+
+  .checkout-form_payment-option__title {
+    font-size: 0.75rem;
+  }
+
+  .checkout-form_payment-option__amount {
+    font-size: 0.75rem;
+  }
+}
+
+.button::before,
+.button::after {
+  content: unset;
 }

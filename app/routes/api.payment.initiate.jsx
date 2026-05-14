@@ -1,4 +1,3 @@
-
 import prisma from "../db.server.js";
 import { initiatePayment } from "../services/payment.service.js";
 import { CORS_HEADERS, corsPrelight } from "../utils/cors.js";
@@ -77,6 +76,7 @@ export async function action({ request }) {
     const result = await initiatePayment({
       shopDomain,
       shippingRate,
+      shippingSource,
       discountCode: discountCode ?? null,
       customerInfo,
       lineItems,

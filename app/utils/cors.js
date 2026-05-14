@@ -15,3 +15,7 @@ export function withCors(response) {
   Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));
   return new Response(response.body, { status: response.status, headers });
 }
+
+export function corsJson(data, status = 200) {
+  return Response.json(data, { status, headers: CORS_HEADERS });
+}

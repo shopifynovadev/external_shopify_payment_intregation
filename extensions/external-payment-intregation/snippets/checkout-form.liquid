@@ -1,5 +1,6 @@
 {{ 'checkout-form.css' | asset_url | stylesheet_tag }}
 {{ 'component-cart-discount.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'cart-payment.js' | asset_url }}" defer></script>
 
 {% liquid
   assign discount_codes = cart.cart_level_discount_applications | where: 'type', 'discount_code' | map: 'title'
@@ -13,9 +14,13 @@
 
   assign discount_codes = discount_codes | uniq
   assign default_shipping_rate = settings.shipping_methods | last
+  assign app_url = shop.metafields.nova_bkash.app_url.value
 %}
 
-<div class="container">
+<div class="container" id="checkout-form_bkash-cart-block"
+  data-app-url="{{ app_url }}"
+  data-shop="{{ shop.domain }}"
+>
   <div class="cartError">
     {%- render 'loading-spinner', class: "loading__spinner" -%}
     <p class="center h3"></p>
@@ -165,29 +170,19 @@
           </div>
         </div>
 
-        {% comment %} Shipping Method {% endcomment %}
-        <div class="checkout-card">
+        {% comment %} Shipping Method — rendered by cart-payment.js from Shopify delivery profiles {% endcomment %}
+        <div class="checkout-card" id="checkout-form_shipping-section">
           {% if section_details.settings.customer_shipping_details_title != blank %}
             <h3 class="card-header">
               {{ section_details.settings.customer_shipping_details_title }}
             </h3>
           {% endif %}
-          <div class="card-body">
-            <div class="shipping-methods" id="shippingMethods">
-              <ul class="shipping-methods-list">
-                {% assign shipping_metaobjects = shop.metaobjects.shipping_methods.values %}
-                {% for method in shipping_metaobjects %}
-                  <li class="shipping-method">
-                    <input type="radio" name="shippingMethod" data-location="{{ method.method_location }}" data-rate="{{ method.method_rate.value }}" value="{{ method.method_id }}" id="{{ method.method_title | split: " " | join: '-' | downcase }}" checked>
-                    <div class="shipping-details">
-                      <h4>{{ method.method_title }}</h4>
-                      <div class="shipping-price">{{ method.method_rate.value | money }}</div>
-                    </div>
-                  </li>
-                {% endfor %}
-              </ul>
-            </div>
-          </div>
+          {% if section_details.settings.customer_shipping_details_subtitle != blank %}
+            <p class="shipping-warning">
+              {{ section_details.settings.customer_shipping_details_subtitle }}
+            </p>
+          {% endif %}
+          <div class="card-body" id="checkout-form_shipping-rates"></div>
         </div>
 
         <div class="order-summary large-up-hide">
@@ -243,8 +238,9 @@
         {% comment %} Payment Method {% endcomment %}
         <div class="checkout-card">
           <h3 class="card-header">
-            Payment Method
+            {{ block.settings.customer_payment_methods_title }}
           </h3>
+          {% render 'payment-options', block: block %}
           <button type="submit" id="payWithBkash" class="button">
             {% render "loading-spinner" %}
             <span id="payText">Pay with bKash</span>
@@ -328,10 +324,12 @@
       {% comment %}Always get the most recent cart state{% endcomment %}
       const cart = await fetch('/cart.js').then(res => res.json());
 
-      {% comment %}Get selected shipping method DOM element{% endcomment %}
+      {% comment %}Get selected named shipping rate (rendered by cart-payment.js){% endcomment %}
       const selectedShippingInput = document.querySelector('input[name="shippingMethod"]:checked');
-      const shippingRate = selectedShippingInput?.dataset?.rate;
-      const shippingTitle = selectedShippingInput?.nextElementSibling?.querySelector('h4')?.innerText;
+      const namedRatePrice = parseFloat(selectedShippingInput?.dataset?.rate ?? 0);
+      const namedRateTitle = selectedShippingInput?.closest('.checkout-form_rate-option')?.dataset?.title ?? '';
+      const weightShipping = window.CheckoutBkashForm?.weightShipping ?? 0;
+      const totalShipping = weightShipping + namedRatePrice;
 
       const order_details = {
         cart_details: cart,
@@ -346,10 +344,11 @@
           division: formData.get("division"),
           country: formData.get("country"),
           countryCode: formData.get("country") === 'bangladesh' && "BD",
+          payment_details: formData.get("nova_selected_plan"),
           shipping_method: {
-            id: selectedShippingInput?.value,
-            title: shippingTitle,
-            rate: shippingRate
+            id: selectedShippingInput?.value ?? 'weight',
+            title: namedRateTitle || 'Weight-based shipping',
+            rate: totalShipping
           }
         }
       };
@@ -417,6 +416,8 @@
 
               const selectedShippingMethods = document.querySelector(`[value="${data.shipping_method.id}"]`);
               selectedShippingMethods.checked = true;
+              const selectedPaymentMethods = document.querySelector(`[value="${data.payment_details}"]`);
+              selectedPaymentMethods.checked = true;
               window.updateShippingValues(selectedShippingMethods);
             }
           }
@@ -435,10 +436,126 @@
 
     showCartErrorFromURL();
 
-    {% comment %}HANDLE SHIPPING METHOD CHANGES{% endcomment %}
-    const shippingInputs = document.querySelectorAll('input[name="shippingMethod"]');
-    shippingInputs.forEach(input => {
-      input.addEventListener('change', () => window.updateShippingValues(input));
-    });
+    {% comment %}
+      DEFINE window.updateShippingValues
+      ─────────────────────────────────
+      Called from three places:
+        1. Shipping radio change (below)
+        2. showCartErrorFromURL() when restoring a saved shipping selection
+        3. cart-discount.js after every discount apply / remove
+
+      Updates order-summary spans in both desktop and mobile columns,
+      then notifies the NovaBkashCart instance (cart-payment.js) so its
+      own summary panel stays in sync too.
+    {% endcomment %}
+    window.updateShippingValues = (inputEl) => {
+      {% comment %}
+        Shipping = weight-based (auto-calc by cart-payment.js) + selected named rate.
+        inputEl param kept for backward-compat callers but not used for rate lookup.
+      {% endcomment %}
+      const weightRate = window.CheckoutBkashForm?.weightShipping ?? 0;
+      const namedRate  = window.CheckoutBkashForm?.selectedRate?.price ?? 0;
+      const shippingRate = weightRate + namedRate;
+      const subtotalCents = parseInt(
+        document.getElementById('subtotal')?.dataset?.subTotal ??
+        document.getElementById('subtotal-mobile')?.dataset?.subTotal ?? 0,
+        10
+      );
+      const discountCents = parseInt(
+        document.querySelector('[data-discount]')?.dataset?.discount ?? 0,
+        10
+      );
+
+      const totalMoney = Math.max(
+        0,
+        (subtotalCents / 100) + shippingRate - (discountCents / 100)
+      ).toFixed(2);
+      const shippingMoney = shippingRate.toFixed(2);
+      const subtotalMoney = (subtotalCents / 100).toFixed(2);
+
+      {% comment %}Update desktop summary spans{% endcomment %}
+      const subtotalEl = document.getElementById('subtotal');
+      const shippingEl = document.getElementById('shippingCost');
+      const totalEl    = document.getElementById('total');
+
+      {% comment %}Update mobile summary spans{% endcomment %}
+      const subtotalMEl = document.getElementById('subtotal-mobile');
+      const shippingMEl = document.getElementById('shippingCost-mobile');
+      const totalMEl    = document.getElementById('total-mobile');
+
+      if (subtotalEl)  subtotalEl.textContent  = subtotalMoney;
+      if (shippingEl)  shippingEl.textContent  = shippingMoney;
+      if (totalEl)     totalEl.textContent      = totalMoney;
+
+      if (subtotalMEl) subtotalMEl.textContent  = subtotalMoney;
+      if (shippingMEl) shippingMEl.textContent  = shippingMoney;
+      if (totalMEl)    totalMEl.textContent      = totalMoney;
+
+      {% comment %}
+        Notify the NovaBkashCart instance so its own summary panel
+        reflects the new shipping selection, without a separate /cart.js fetch.
+      {% endcomment %}
+      if (window.novaBkashCart && input) {
+        window.novaBkashCart.selectedRate = {
+          code:  input.value,
+          title: input.nextElementSibling?.querySelector('h4')?.innerText ?? '',
+          price: shippingRate,
+        };
+        window.novaBkashCart.updateSummary();
+      }
+    };
+
+    {% comment %}Shipping radio change events are bound inside cart-payment.js renderNamedRates()
+       because the options are rendered asynchronously after DOMContentLoaded.{% endcomment %}
+
+    {% comment %}
+      CART MUTATION OBSERVER (checkout-form side)
+      ────────────────────────────────────────────
+      When the theme re-renders cart sections (qty change / item remove),
+      re-fetch /cart.js and update our subtotal data attributes + summary spans.
+      NovaBkashCart (cart-payment.js) has its own observer for its own summary panel.
+    {% endcomment %}
+    const cartSyncTargets = [
+      document.getElementById('main-cart-items'),
+      document.getElementById('main-cart-footer'),
+      document.querySelector('.cart__items'),
+      document.querySelector('[data-cart-items]'),
+    ].filter(Boolean);
+
+    if (cartSyncTargets.length > 0) {
+      let cartSyncTimer = null;
+
+      const cartObserver = new MutationObserver(() => {
+        clearTimeout(cartSyncTimer);
+        cartSyncTimer = setTimeout(async () => {
+          try {
+            const cart = await fetch('/cart.js').then(r => r.json());
+
+            {% comment %}Update subtotal data attributes so updateShippingValues
+               always reads the freshest value on the next shipping change.{% endcomment %}
+            document.querySelectorAll('[id^="subtotal"]').forEach(el => {
+              el.dataset.subTotal = cart.original_total_price;
+              el.textContent = (cart.original_total_price / 100).toFixed(2);
+            });
+
+            document.querySelectorAll('[data-discount]').forEach(el => {
+              el.dataset.discount = cart.total_discount;
+              if (cart.total_discount > 0) {
+                el.textContent = `-${(cart.total_discount / 100).toFixed(2)}`;
+              }
+            });
+
+            {% comment %}Recalculate total with current shipping{% endcomment %}
+            window.updateShippingValues();
+          } catch {
+            // Silent fail — values stay as last known state
+          }
+        }, 300);
+      });
+
+      cartSyncTargets.forEach(target => {
+        cartObserver.observe(target, { childList: true, subtree: true });
+      });
+    }
   });
 </script>

@@ -1,9 +1,22 @@
+.button.view-cart {
+  width: 100%;
+}
+
+/* Hide all paths that lead to Shopify native checkout */
+.checkout-button,
+[href*="/checkouts"],
+[href="/checkout"],
+form[action="/checkout"] button[type="submit"],
+form[action="/checkout"] input[type="submit"],
+input[name="checkout"],
+button[name="checkout"],
+#checkout,
+.cart__checkout-button,
+.cart-page__checkout,
+a[href*="checkouts"],
 [name=checkout],
 [data-shopify=payment-button],
 #main-cart-footer {
   display: none !important;
-}
-
-.button.view-cart {
-  width: 100%;
+  pointer-events: none !important;
 }
