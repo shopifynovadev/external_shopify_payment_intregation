@@ -16,14 +16,18 @@ export async function loader({ request }) {
   }
 
   const session = await prisma.session.findFirst({
-    where: { shop, isOnline: false },
+    where: {
+      shop,
+      isOnline: false,
+      OR: [{ expires: null }, { expires: { gt: new Date() } }],
+    },
     orderBy: { expires: "desc" },
   });
 
-  if (!session) {
+  if (!session?.accessToken) {
     return Response.json(
-      { success: false, error: "Shop not found" },
-      { status: 404, headers: CORS_HEADERS }
+      { success: false, error: "Shop not authenticated" },
+      { status: 401, headers: CORS_HEADERS }
     );
   }
 
@@ -36,6 +40,7 @@ export async function loader({ request }) {
 
     return Response.json({ success: true, data: config }, { headers: CORS_HEADERS });
   } catch (err) {
+    console.error("[shipping/config] error:", err.message, "status:", err.status, typeof err.status);
     return Response.json(
       { success: false, error: err.message },
       { status: 502, headers: CORS_HEADERS }

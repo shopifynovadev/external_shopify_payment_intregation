@@ -5,39 +5,63 @@
       this.appUrl = el.dataset.appUrl;
       this.shopDomain = el.dataset.shop;
       this.cartData = null;
-      this.selectedRate = null; // { title, price } — named rate picked by user
-      this.weightShipping = 0;  // auto-calculated from item weights
-      this.weightRates = {};    // { kg: price } from Shopify delivery profiles
+      this.selectedRate = null;
+      this.weightShipping = 0;
+      this.weightRates = {};
       this.discountCode = null;
       this.discountAmount = 0;
       this.discountApplied = false;
 
       this._cartSyncTimer = null;
       this._cartObserver = null;
+      this.selectedDivision = null;
+      this.cachedShippingDetails = null;
 
       this.$ = (id) => document.getElementById(id);
-      // this.init();
+      this.init();
+      this.bindEvents();
+    }
 
-      this.loadCartAndShipping();
+    // ─── Event Binding ────────────────────────────────────────────────────────
+
+    bindEvents() {
+      // this.$("checkout-form_apply-discount")?.addEventListener("click", () => this.applyDiscount());
+      // this.$("checkout-form_pay-btn")?.addEventListener("click", () => this.pay());
+
+      // const addressFields = ["checkout-form_district", "checkout-form_thana", "checkout-form_street", "checkout-form_division"];
+      // addressFields.forEach((id) => {
+      //   this.$(id)?.addEventListener("change", () => {
+      //     this.selectedRate = null;
+      //     this.validateForm();
+      //   });
+      // });
+
+      // ["checkout-form_name", "checkout-form_phone", "checkout-form_district", "checkout-form_thana", "checkout-form_street"].forEach((id) => {
+      //   this.$(id)?.addEventListener("input", () => this.validateForm());
+      // });
+
+      // division changes
+      const divisionSelect = this.$("division");
+      if (!divisionSelect) {
+        console.warn("#division not found — check your selector or render timing");
+        return;
+      }
+
+      divisionSelect.addEventListener("change", (e) => {
+        this.selectedDivision = e.target.value;
+        this.onDivisionChange(this.selectedDivision);
+      });
     }
 
     async init() {
       try {
-        await Promise.all([this.loadConfig(), this.loadCart()]);
-        this.checkReturnFromBkash();
-        this.bindEvents();
-        this.setupCartObserver();
-        this.listenForDiscountEvents();
+        await Promise.all([this.loadConfig(), this.loadCart(), this.loadShippingConfig()]);
+        // this.checkReturnFromBkash();
+        // this.setupCartObserver();
+        // this.listenForDiscountEvents();
       } catch (err) {
         this.showBanner(`Failed to load payment form: ${err.message}`, "error");
       }
-    }
-
-    // ─── Cart + Shipping Bootstrap ────────────────────────────────────────────
-
-    async loadCartAndShipping() {
-      await this.loadCart();
-      await this.loadShippingConfig();
     }
 
     // ─── Cookie Helpers ───────────────────────────────────────────────────────
@@ -57,33 +81,49 @@
     }
 
     // ─── Shipping Config ──────────────────────────────────────────────────────
+    onDivisionChange() {
+      if (!this.cachedShippingDetails) {
+        this.querySelector(".shipping-warning").style.display = "block";
+        return;
+      }
+
+      const config = JSON.parse(this.cachedShippingDetails);
+      this.applyShippingConfig(config, this.selectedDivision);
+    }
 
     async loadShippingConfig() {
       if (!this.appUrl || !this.shopDomain) return;
 
-      const cached = this.getCookie("nova_sc");
-      if (cached) {
-        try {
-          this.applyShippingConfig(JSON.parse(cached));
-          return;
-        } catch {
-          this.clearCookie("nova_sc");
+      this.cachedShippingDetails = this.getCookie("nova_sc");
+      
+      const divisionSelect = this.querySelector("#division");
+      const currentDivision = divisionSelect?.value;
+
+      if (this.cachedShippingDetails) {
+        // Config already cached — just apply if division is selected
+        if (currentDivision) {
+          this.applyShippingConfig(JSON.parse(this.cachedShippingDetails), currentDivision);
         }
+        return;
       }
 
       try {
         const res = await fetch(`${this.appUrl}/api/shipping/config?shop=${this.shopDomain}`);
         const json = await res.json();
         if (!json.success) return;
-        // 2-day cache — merchant rate changes caught at payment time via SHIPPING_RATE_CHANGED
+
         this.setCookie("nova_sc", JSON.stringify(json.data), 2);
-        this.applyShippingConfig(json.data);
+
+        // Apply immediately if division already has a value
+        if (currentDivision) {
+          this.applyShippingConfig(json.data, currentDivision);
+        }
       } catch {
-        // Silent fail — shipping section stays hidden
+        this.querySelector(".shipping-warning").style.display = "block";
       }
     }
 
-    applyShippingConfig(config) {
+    async applyShippingConfig(config, division) {
       const bdRates = config.BD ?? {};
       const weightRates = {};
       const namedRates = {};
@@ -97,63 +137,102 @@
       }
 
       this.weightRates = weightRates;
-      this.weightShipping = this.calculateWeightShipping();
-      this.renderNamedRates(namedRates);
 
-      // Notify the Liquid summary to update the shipping display
+      const divisionRate = this.getDivisionRate(namedRates, division);
+      const result = await this.calculateShipping(weightRates, divisionRate);
+
+      this.renderShippingResult({ ...result, division });
+
       if (typeof window.updateShippingValues === "function") {
-        window.updateShippingValues();
+        window.updateShippingValues(result.total);
       }
     }
 
-    calculateWeightShipping() {
-      if (!this.cartData) return 0;
+    async calculateShipping(weightRates, divisionRate) {
+      const cartItems = await this.getCartItems();
+
+      let weightTotal = 0;
+      let hasWeightProduct = false;
+      let hasNonWeightProduct = false;
+
+      for (const item of cartItems.items) {
+        const itemWeightKg = item.grams / 1000;
+        const rate = weightRates[itemWeightKg];
+        console.log(rate);
+
+        if (rate) {
+          hasWeightProduct = true;
+          weightTotal += rate * item.quantity;
+        } else {
+          hasNonWeightProduct = true;
+        }
+      }
+
+      // Weighted only → weight rates only
+      // Non-weighted only → division rate only
+      // Both → weight rates + division rate
       let total = 0;
-      for (const item of this.cartData.items) {
-        const kg = item.grams / 1000;
-        const rate = this.weightRates[kg];
-        if (rate != null) total += rate * item.quantity;
-      }
-      return parseFloat(total.toFixed(2));
+      if (hasWeightProduct) total += weightTotal;
+      if (hasNonWeightProduct) total += divisionRate;
+
+      return { weightTotal, divisionRate, hasWeightProduct, hasNonWeightProduct, total };
     }
 
-    renderNamedRates(namedRates) {
-      const section = this.$("checkout-form_shipping-section");
+    getDivisionRate(namedRates, division) {
+      if (!division) return 0;
+
+      const divLower = division.toLowerCase();
+
+      if (divLower === "dhaka") {
+        return namedRates["Inside Dhaka"] ?? 0;
+      } else {
+        return namedRates["Outside Dhaka"] ?? 0;
+      }
+    }
+
+    async getCartItems() {
+      try {
+        const res = await fetch("/cart.js");
+        const cart = await res.json();
+        return cart ?? [];
+      } catch {
+        console.error("Failed to fetch cart");
+        return [];
+      }
+    }
+
+    renderShippingResult({ weightTotal, divisionRate, hasWeightProduct, hasNonWeightProduct, total, division }) {
+      const shippingContainer = this.$("checkout-form_shipping-section");
       const container = this.$("checkout-form_shipping-rates");
-      if (!section || !container) return;
+      const warning = shippingContainer.querySelector(".shipping-warning");
 
-      const entries = Object.entries(namedRates);
-
-      if (entries.length === 0) {
-        // Weight-only: show the section only to display the auto-calculated cost
-        if (this.weightShipping > 0) section.style.display = "block";
+      if (!division) {
+        warning.style.display = "block";
+        container.innerHTML = "";
         return;
       }
 
-      section.style.display = "block";
-      container.innerHTML = entries.map(([title, price]) => `
-        <label class="checkout-form_rate-option" data-title="${title}" data-price="${price}">
-          <input type="radio" name="shippingMethod" value="${title}" data-rate="${price}" style="margin:0;" />
-          <span style="flex:1;">${title}</span>
-          <strong>৳${parseFloat(price).toFixed(2)}</strong>
-        </label>
-      `).join("");
+      warning.style.display = "none";
 
-      container.querySelectorAll(".checkout-form_rate-option").forEach((el) => {
-        el.addEventListener("click", () => {
-          container.querySelectorAll(".checkout-form_rate-option").forEach(e => e.classList.remove("selected"));
-          el.classList.add("selected");
-          el.querySelector("input").checked = true;
-          this.selectedRate = {
-            title: el.dataset.title,
-            price: parseFloat(el.dataset.price),
-          };
-          if (typeof window.updateShippingValues === "function") {
-            window.updateShippingValues();
-          }
-          this.validateForm();
-        });
-      });
+      container.innerHTML = `
+        <label class="checkout-form_payment-option" data-type="full">
+          <input
+            class="checkout-form_payment-option__input"
+            type="radio"
+            name="shippingMethod"
+            value="${total}"
+            data-label="${division}-delivery"
+            checked
+          >
+          <span class="checkout-form_payment-option__card">
+            <span class="checkout-form_payment-option__radio-dot"></span>
+            <span class="checkout-form_payment-option__text">
+              <span class="checkout-form_payment-option__title">Total Shipping</span>
+              <span class="checkout-form_payment-option__amount" data-amount>৳${total}</span>
+            </span>
+          </span>
+        </label>
+      `;
     }
 
     // ─── Cart Observer ────────────────────────────────────────────────────────
@@ -161,7 +240,6 @@
     setupCartObserver() {
       const candidates = [
         "#main-cart-items",
-        "#main-cart-footer",
         ".cart__items",
         "[data-cart-items]",
         "cart-items",
@@ -185,11 +263,9 @@
 
     async syncCartFromTheme() {
       try {
-        const res = await fetch("/cart.js");
-        const cart = await res.json();
-        this.cartData = cart;
+        this.cartData = await this.getCartItems();
 
-        if (cart.item_count === 0) {
+        if (this.cartData.item_count === 0) {
           this.showBanner("Your cart is empty.", "info");
           const btn = this.$("checkout-form_pay-btn");
           if (btn) btn.disabled = true;
@@ -198,7 +274,7 @@
         }
 
         // Recalculate weight shipping with updated cart
-        this.weightShipping = this.calculateWeightShipping();
+        this.weightShipping = this.applyShippingConfig(this.cachedShippingDetails, this.selectedDivision);
         this.updateSummary();
       } catch {
         // Silent fail
@@ -240,8 +316,7 @@
     }
 
     async loadCart() {
-      const res = await fetch("/cart.js");
-      this.cartData = await res.json();
+      this.cartData = await this.getCartItems();
       if (this.cartData.item_count === 0) {
         this.showBanner("Your cart is empty.", "info");
         const btn = this.$("checkout-form_pay-btn");
@@ -430,25 +505,6 @@
       el.style.border = `1px solid ${c.border}`;
       el.style.color = c.text;
       el.textContent = msg;
-    }
-
-    // ─── Event Binding ────────────────────────────────────────────────────────
-
-    bindEvents() {
-      this.$("checkout-form_apply-discount")?.addEventListener("click", () => this.applyDiscount());
-      this.$("checkout-form_pay-btn")?.addEventListener("click", () => this.pay());
-
-      const addressFields = ["checkout-form_district", "checkout-form_thana", "checkout-form_street", "checkout-form_division"];
-      addressFields.forEach((id) => {
-        this.$(id)?.addEventListener("change", () => {
-          this.selectedRate = null;
-          this.validateForm();
-        });
-      });
-
-      ["checkout-form_name", "checkout-form_phone", "checkout-form_district", "checkout-form_thana", "checkout-form_street"].forEach((id) => {
-        this.$(id)?.addEventListener("input", () => this.validateForm());
-      });
     }
   }
 
