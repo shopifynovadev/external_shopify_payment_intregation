@@ -68,6 +68,7 @@
                   name="phone" 
                   class="form-control"
                   placeholder="Phone Number"
+                  pattern="^(\+8801|8801|01)\d{9}$"
                   {%- if section_details.settings.contact_selection == "phone_number" -%}
                     required
                   {%- endif -%}
@@ -324,12 +325,10 @@
       {% comment %}Always get the most recent cart state{% endcomment %}
       const cart = await fetch('/cart.js').then(res => res.json());
 
-      {% comment %}Get selected named shipping rate (rendered by cart-payment.js){% endcomment %}
+      {% comment %}Get selected named shipping rate{% endcomment %}
       const selectedShippingInput = document.querySelector('input[name="shippingMethod"]:checked');
-      const namedRatePrice = parseFloat(selectedShippingInput?.dataset?.rate ?? 0);
-      const namedRateTitle = selectedShippingInput?.closest('.checkout-form_rate-option')?.dataset?.title ?? '';
-      const weightShipping = window.CheckoutBkashForm?.weightShipping ?? 0;
-      const totalShipping = weightShipping + namedRatePrice;
+      const namedRatePrice = parseFloat(selectedShippingInput?.value);
+      const namedRateTitle = selectedShippingInput?.dataset?.label;
 
       const order_details = {
         cart_details: cart,
@@ -344,11 +343,13 @@
           division: formData.get("division"),
           country: formData.get("country"),
           countryCode: formData.get("country") === 'bangladesh' && "BD",
-          payment_details: formData.get("nova_selected_plan"),
+          payment_details: {
+            pay_type: formData.get("checkout-form_selected-amount"),
+            need_to_pay: formData.get("checkout-form_selected-plan")
+          },
           shipping_method: {
-            id: selectedShippingInput?.value ?? 'weight',
-            title: namedRateTitle || 'Weight-based shipping',
-            rate: totalShipping
+            title: namedRateTitle,
+            rate: namedRatePrice
           }
         }
       };
@@ -447,7 +448,7 @@
       Updates order-summary spans in both desktop and mobile columns,
       then notifies the NovaBkashCart instance (cart-payment.js) so its
       own summary panel stays in sync too.
-    {% endcomment %}
+    
     window.updateShippingValues = (inputEl) => {
       {% comment %}
         Shipping = weight-based (auto-calc by cart-payment.js) + selected named rate.
@@ -504,6 +505,7 @@
         window.novaBkashCart.updateSummary();
       }
     };
+    {% endcomment %}
 
     {% comment %}Shipping radio change events are bound inside cart-payment.js renderNamedRates()
        because the options are rendered asynchronously after DOMContentLoaded.{% endcomment %}
