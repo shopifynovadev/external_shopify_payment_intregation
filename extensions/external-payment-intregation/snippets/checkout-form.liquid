@@ -13,13 +13,15 @@
   endfor
 
   assign discount_codes = discount_codes | uniq
-  assign default_shipping_rate = settings.shipping_methods | last
   assign app_url = shop.metafields.nova_bkash.app_url.value
 %}
 
-<div class="container" id="checkout-form_bkash-cart-block"
+<checkout-bkash-form 
+  class="container"
+  id="checkout-form_bkash-cart-block"
   data-app-url="{{ app_url }}"
   data-shop="{{ shop.domain }}"
+  data-id="{{ block.id }}"
 >
   <div class="cartError">
     {%- render 'loading-spinner', class: "loading__spinner" -%}
@@ -201,7 +203,7 @@
                 <span>Shipping</span>
                 <div>
                   {%- render 'loading-spinner' -%}
-                  <span id="shippingCost-mobile">{{ default_shipping_rate.method_rate.value | money }}</span>
+                  <span id="shippingCost-mobile">0.00</span>
                 </div>
               </div>
 
@@ -222,7 +224,7 @@
                 <span>Total</span>
                 <div>
                   {%- render 'loading-spinner' -%}
-                  <span id="total-mobile">{{- cart.total_price | plus: default_shipping_rate.method_rate.value | money -}}</span>
+                  <span id="total-mobile">{{- cart.total_price | plus: 0 | money -}}</span>
                 </div>
               </div>
             </div>
@@ -242,7 +244,7 @@
             {{ block.settings.customer_payment_methods_title }}
           </h3>
           {% render 'payment-options', block: block %}
-          <button type="submit" id="payWithBkash" class="button">
+          <button type="submit" id="payWithBkash" class="button" disabled>
             {% render "loading-spinner" %}
             <span id="payText">Pay with bKash</span>
           </button>
@@ -266,7 +268,7 @@
             <span>Shipping</span>
             <div>
               {%- render 'loading-spinner' -%}
-              <span id="shippingCost">{{ default_shipping_rate.method_rate.value | money }}</span>
+              <span id="shippingCost">0.00</span>
             </div>
           </div>
 
@@ -287,7 +289,7 @@
             <span>Total</span>
             <div>
               {%- render 'loading-spinner' -%}
-              <span id="total">{{- cart.total_price | plus: default_shipping_rate.method_rate.value | money -}}</span>
+              <span id="total">{{- cart.total_price | plus: 0 | money -}}</span>
             </div>
           </div>
         </div>
@@ -301,263 +303,4 @@
       </div>
     </div>
   </div>
-</div>
-
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const form = document.querySelector("#checkoutForm");
-    if (!form) return;
-
-    const handleButtonLoading = (button, isDisabled) => {
-      button.disabled = isDisabled;
-      button.classList.add("loading");
-      button.querySelector(".loading__spinner").classList.remove("hidden");
-    }
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      handleButtonLoading(document.querySelector("#payWithBkash"), true);
-
-      const formData = new FormData(form);
-
-      {% comment %}Always get the most recent cart state{% endcomment %}
-      const cart = await fetch('/cart.js').then(res => res.json());
-
-      {% comment %}Get selected named shipping rate{% endcomment %}
-      const selectedShippingInput = document.querySelector('input[name="shippingMethod"]:checked');
-      const namedRatePrice = parseFloat(selectedShippingInput?.value);
-      const namedRateTitle = selectedShippingInput?.dataset?.label;
-
-      const order_details = {
-        cart_details: cart,
-        shipping_details: {
-          email: formData.get("email"),
-          phone: formData.get("phone"),
-          first_name: formData.get("firstName"),
-          last_name: formData.get("lastName"),
-          address: formData.get("address"),
-          city: formData.get("city"),
-          zip: formData.get("zip"),
-          division: formData.get("division"),
-          country: formData.get("country"),
-          countryCode: formData.get("country") === 'bangladesh' && "BD",
-          payment_details: {
-            pay_type: formData.get("checkout-form_selected-amount"),
-            need_to_pay: formData.get("checkout-form_selected-plan")
-          },
-          shipping_method: {
-            title: namedRateTitle,
-            rate: namedRatePrice
-          }
-        }
-      };
-
-      {% comment %}Store data in localStorage with token{% endcomment %}
-      if (cart.token) {
-        localStorage.setItem(`cart-${cart.token.split("?key=")[1]}`, JSON.stringify(order_details.shipping_details));
-      }
-
-      console.log(order_details);
-
-      try {
-        const res = await fetch('{{ shop.metafields.nova_bkash.app_url.value }}/api/bkash/payment/create', {
-          method: 'POST',
-          headers: {
-            accept: 'application/json',
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify(order_details)
-        });
-
-        const data = await res.json();
-        if (data?.bkashURL) {
-          window.location.href = data.bkashURL;
-        } else {
-          console.error('No bkashURL in response');
-        }
-      } catch (error) {
-        console.error('Payment error:', error);
-        handleButtonLoading(document.querySelector("#payWithBkash"), false);
-      }
-    });
-
-    {% comment %}RESTORE FORM DATA IF TOKEN & ERROR EXIST{% endcomment %}
-    const showCartErrorFromURL = () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token')?.split('').reverse().join('');
-      const error = decodeURI(urlParams.get('error'));
-      const errorMessage = urlParams.get('message');
-
-      const errorContainer = document.querySelector('.container .cartError');
-      const errorElement = errorContainer?.querySelector("p");
-      const spinner = errorContainer?.querySelector('.loading__spinner');
-
-      if (token && error) {
-        const saved = localStorage.getItem(`cart-${token}`);
-        if (saved) {
-          {% comment %}Show error text{% endcomment %}
-          const errorText = errorMessage ? decodeURI(errorMessage) : window.cartError[error] || "Something went wrong. Please try again.";
-          if (errorElement) errorElement.textContent = errorText;
-
-          {% comment %}Load previous shipping details from localStorage{% endcomment %}
-          if (saved) {
-            const data = JSON.parse(saved);
-            if (data) {
-              form.querySelector('[name="email"]').value = data.email || "";
-              form.querySelector('[name="phone"]').value = data.phone || "";
-              form.querySelector('[name="firstName"]').value = data.first_name || "";
-              form.querySelector('[name="lastName"]').value = data.last_name || "";
-              form.querySelector('[name="address"]').value = data.address || "";
-              form.querySelector('[name="city"]').value = data.city || "";
-              form.querySelector('[name="zip"]').value = data.zip || "";
-              form.querySelector('[name="division"]').value = data.division || "";
-              form.querySelector('[name="country"]').value = data.country || "";
-
-              const selectedShippingMethods = document.querySelector(`[value="${data.shipping_method.id}"]`);
-              selectedShippingMethods.checked = true;
-              const selectedPaymentMethods = document.querySelector(`[value="${data.payment_details}"]`);
-              selectedPaymentMethods.checked = true;
-              window.updateShippingValues(selectedShippingMethods);
-            }
-          }
-        } else {
-          {% comment %}Invalid token — remove from URL{% endcomment %}
-          urlParams.delete('token');
-          urlParams.delete('error');
-          const newUrl = window.location.pathname;
-          window.history.replaceState({}, document.title, newUrl);
-        }
-      }
-
-      {% comment %}Hide spinner{% endcomment %}
-      if (spinner) spinner.classList.add("hidden");
-    };
-
-    showCartErrorFromURL();
-
-    {% comment %}
-      DEFINE window.updateShippingValues
-      ─────────────────────────────────
-      Called from three places:
-        1. Shipping radio change (below)
-        2. showCartErrorFromURL() when restoring a saved shipping selection
-        3. cart-discount.js after every discount apply / remove
-
-      Updates order-summary spans in both desktop and mobile columns,
-      then notifies the NovaBkashCart instance (cart-payment.js) so its
-      own summary panel stays in sync too.
-    
-    window.updateShippingValues = (inputEl) => {
-      {% comment %}
-        Shipping = weight-based (auto-calc by cart-payment.js) + selected named rate.
-        inputEl param kept for backward-compat callers but not used for rate lookup.
-      {% endcomment %}
-      const weightRate = window.CheckoutBkashForm?.weightShipping ?? 0;
-      const namedRate  = window.CheckoutBkashForm?.selectedRate?.price ?? 0;
-      const shippingRate = weightRate + namedRate;
-      const subtotalCents = parseInt(
-        document.getElementById('subtotal')?.dataset?.subTotal ??
-        document.getElementById('subtotal-mobile')?.dataset?.subTotal ?? 0,
-        10
-      );
-      const discountCents = parseInt(
-        document.querySelector('[data-discount]')?.dataset?.discount ?? 0,
-        10
-      );
-
-      const totalMoney = Math.max(
-        0,
-        (subtotalCents / 100) + shippingRate - (discountCents / 100)
-      ).toFixed(2);
-      const shippingMoney = shippingRate.toFixed(2);
-      const subtotalMoney = (subtotalCents / 100).toFixed(2);
-
-      {% comment %}Update desktop summary spans{% endcomment %}
-      const subtotalEl = document.getElementById('subtotal');
-      const shippingEl = document.getElementById('shippingCost');
-      const totalEl    = document.getElementById('total');
-
-      {% comment %}Update mobile summary spans{% endcomment %}
-      const subtotalMEl = document.getElementById('subtotal-mobile');
-      const shippingMEl = document.getElementById('shippingCost-mobile');
-      const totalMEl    = document.getElementById('total-mobile');
-
-      if (subtotalEl)  subtotalEl.textContent  = subtotalMoney;
-      if (shippingEl)  shippingEl.textContent  = shippingMoney;
-      if (totalEl)     totalEl.textContent      = totalMoney;
-
-      if (subtotalMEl) subtotalMEl.textContent  = subtotalMoney;
-      if (shippingMEl) shippingMEl.textContent  = shippingMoney;
-      if (totalMEl)    totalMEl.textContent      = totalMoney;
-
-      {% comment %}
-        Notify the NovaBkashCart instance so its own summary panel
-        reflects the new shipping selection, without a separate /cart.js fetch.
-      {% endcomment %}
-      if (window.novaBkashCart && input) {
-        window.novaBkashCart.selectedRate = {
-          code:  input.value,
-          title: input.nextElementSibling?.querySelector('h4')?.innerText ?? '',
-          price: shippingRate,
-        };
-        window.novaBkashCart.updateSummary();
-      }
-    };
-    {% endcomment %}
-
-    {% comment %}Shipping radio change events are bound inside cart-payment.js renderNamedRates()
-       because the options are rendered asynchronously after DOMContentLoaded.{% endcomment %}
-
-    {% comment %}
-      CART MUTATION OBSERVER (checkout-form side)
-      ────────────────────────────────────────────
-      When the theme re-renders cart sections (qty change / item remove),
-      re-fetch /cart.js and update our subtotal data attributes + summary spans.
-      NovaBkashCart (cart-payment.js) has its own observer for its own summary panel.
-    {% endcomment %}
-    const cartSyncTargets = [
-      document.getElementById('main-cart-items'),
-      document.getElementById('main-cart-footer'),
-      document.querySelector('.cart__items'),
-      document.querySelector('[data-cart-items]'),
-    ].filter(Boolean);
-
-    if (cartSyncTargets.length > 0) {
-      let cartSyncTimer = null;
-
-      const cartObserver = new MutationObserver(() => {
-        clearTimeout(cartSyncTimer);
-        cartSyncTimer = setTimeout(async () => {
-          try {
-            const cart = await fetch('/cart.js').then(r => r.json());
-
-            {% comment %}Update subtotal data attributes so updateShippingValues
-               always reads the freshest value on the next shipping change.{% endcomment %}
-            document.querySelectorAll('[id^="subtotal"]').forEach(el => {
-              el.dataset.subTotal = cart.original_total_price;
-              el.textContent = (cart.original_total_price / 100).toFixed(2);
-            });
-
-            document.querySelectorAll('[data-discount]').forEach(el => {
-              el.dataset.discount = cart.total_discount;
-              if (cart.total_discount > 0) {
-                el.textContent = `-${(cart.total_discount / 100).toFixed(2)}`;
-              }
-            });
-
-            {% comment %}Recalculate total with current shipping{% endcomment %}
-            window.updateShippingValues();
-          } catch {
-            // Silent fail — values stay as last known state
-          }
-        }, 300);
-      });
-
-      cartSyncTargets.forEach(target => {
-        cartObserver.observe(target, { childList: true, subtree: true });
-      });
-    }
-  });
-</script>
+</checkout-bkash-form>
