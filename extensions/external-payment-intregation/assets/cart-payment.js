@@ -10,7 +10,6 @@
       // Cart & shipping state
       this.cartData             = null;
       this.selectedRate         = null;
-      this.weightShipping       = 0;
       this.weightRates          = {};
       this.cachedShippingDetails = null;
       this.selectedDivision     = null;
@@ -28,7 +27,7 @@
       this.$ = (id) => document.getElementById(id);
 
       // Expose instance globally so window.updateShippingValues and
-      // cart-discount.js can read weightShipping / selectedRate
+      // cart-discount.js can read selectedRate
       window.CheckoutBkashForm = this;
 
       // Attach all window-level helpers that cart-discount.js depends on
@@ -98,7 +97,6 @@
       const errorMessage = urlParams.get("message");
 
       const errorContainer = document.querySelector(".container .cartError");
-      const errorElement   = errorContainer?.querySelector("p");
       const spinner        = errorContainer?.querySelector(".loading__spinner");
 
       if (token && error) {
@@ -109,7 +107,7 @@
           const errorText = errorMessage
             ? decodeURI(errorMessage)
             : window.cartError?.[error] ?? "Something went wrong. Please try again.";
-          if (errorElement) errorElement.textContent = errorText;
+          this._showBanner(errorText, "error");
 
           // Restore form fields
           const data = JSON.parse(saved);
@@ -165,9 +163,8 @@
     _defineWindowHelpers() {
       // Called by: shipping radio change, showCartErrorFromURL, cart-discount.js
       window.updateShippingValues = () => {
-        const weightRate  = this.weightShipping ?? 0;
         const namedRate   = this.selectedRate?.price ?? 0;
-        const shippingRate = weightRate + namedRate;
+        const shippingRate = namedRate;
 
         const subtotalCents = parseInt(
           this.$("subtotal")?.dataset?.subTotal ??
@@ -282,12 +279,6 @@
 
     async _loadCart() {
       this.cartData = await this._getCartItems();
-      if (this.cartData.item_count === 0) {
-        this._showBanner("Your cart is empty.", "info");
-        const btn = this.$("payWithBkash");
-        if (btn) btn.disabled = true;
-        return;
-      }
       this._updateSummary();
     }
 
@@ -425,7 +416,8 @@
 
       this._renderShippingResult({ ...result, division });
 
-      window.updateShippingValues();
+      // window.updateShippingValues();
+      this._updateSummary();
     }
 
     async _calculateShipping(weightRates, divisionRate) {
@@ -619,33 +611,39 @@
     // ─── Summary ──────────────────────────────────────────────────────────────
 
     _updateSummary() {
-      const subtotalEl = this.$("checkout-form_subtotal");
-      if (!subtotalEl) {
-        // Summary elements not in DOM — delegate to Liquid inline summary
-        window.updateShippingValues();
-        return;
-      }
+      const subtotalMobileEl = this.$("subtotal-mobile");
+      const subtotalDesktopEl = this.$("subtotal");
+      const totalMobileEl = this.$("total-mobile");
+      const totalDesktopEl = this.$("total");
+      const shippingMobileEl = this.$("shippingCost-mobile");
+      const shippingDesktopEl = this.$("shippingCost");
+      // if (!subtotalEl) {
+      //   // Summary elements not in DOM — delegate to Liquid inline summary
+      //   window.updateShippingValues();
+      //   return;
+      // }
 
-      const subtotal = this.cartData ? this.cartData.total_price / 100 : 0;
-      const shipping = this.weightShipping + (this.selectedRate?.price ?? 0);
-      const discount = this.discountAmount;
+      console.log(this.cartData);
+      const subtotal = this.cartData ? this.cartData.original_total_price / 100 : 0;
+      const shipping = (this.selectedRate?.price ?? 0);
+      const discount = this.cartData ? this.cartData.total_discount / 100 : 0;
       const total    = Math.max(0, subtotal + shipping - discount);
 
-      subtotalEl.textContent = `৳${subtotal.toFixed(2)}`;
-      this.$("checkout-form_shipping-cost").textContent =
-        shipping > 0 ? `৳${shipping.toFixed(2)}` : "—";
-      this.$("checkout-form_total").textContent = `৳${total.toFixed(2)}`;
+      subtotalMobileEl.textContent = `৳${subtotal.toFixed(2)}`;
+      subtotalDesktopEl.textContent = `৳${subtotal.toFixed(2)}`;
+      shippingMobileEl.textContent = shipping > 0 ? `৳${shipping.toFixed(2)}` : "—";
+      shippingDesktopEl.textContent = shipping > 0 ? `৳${shipping.toFixed(2)}` : "—";
+      totalMobileEl.textContent = `৳${total.toFixed(2)}`;
+      totalDesktopEl.textContent = `৳${total.toFixed(2)}`;
 
-      const discountRow = this.$("checkout-form_discount-row");
-      if (discountRow) {
-        discountRow.style.display = discount > 0 ? "flex" : "none";
-        if (discount > 0) {
-          this.$("checkout-form_discount-amount").textContent = `-৳${discount.toFixed(2)}`;
+      ["discountRow", "discountRow-mobile"].forEach(id => {
+        const discountRow = this.$(id);
+        console.log(discount);
+        if (discountRow && discount > 0) {
+          discountRow.classList.remove("hidden");
+          discountRow.querySelector(".cart__discount-value span").textContent = `-৳${discount.toFixed(2)}`;
         }
-      }
-
-      const summary = this.$("checkout-form_summary");
-      if (summary) summary.style.display = "block";
+      })
     }
 
     // ─── Discount (Nova/bKash backend validation — legacy) ────────────────────

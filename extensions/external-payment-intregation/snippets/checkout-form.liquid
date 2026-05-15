@@ -25,7 +25,7 @@
 >
   <div class="cartError">
     {%- render 'loading-spinner', class: "loading__spinner" -%}
-    <p class="center h3"></p>
+    <p id="checkout-form_banner" style="display:none;"></p>
   </div>
   <div class="checkout-header {{ section_details.settings.alignment }}">
     {% if section_details.settings.heading != blank %}
@@ -207,18 +207,16 @@
                 </div>
               </div>
 
-              {% if discount_codes.size > 0 %}
-                <div class="summary-row" id="discountRow-mobile">
-                  <span class="cart__discount-label">
-                    {% render 'icon-discount' %}
-                    Discount
-                  </span>
-                  <span class="cart__discount-value cart-secondary-typography">
-                    {%- render 'loading-spinner' -%}
-                    <span data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
-                  </span>
-                </div>
-              {% endif %}
+              <div class="summary-row hidden" id="discountRow-mobile">
+                <span class="cart__discount-label">
+                  {% render 'icon-discount' %}
+                  Discount
+                </span>
+                <span class="cart__discount-value cart-secondary-typography">
+                  {%- render 'loading-spinner' -%}
+                  <span data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
+                </span>
+              </div>
 
               <div class="summary-row summary-total">
                 <span>Total</span>
@@ -272,18 +270,16 @@
             </div>
           </div>
 
-          {% if discount_codes.size > 0 %}
-            <div class="summary-row" id="discountRow">
-              <span class="cart__discount-label">
-                {% render 'icon-discount' %}
-                Discount
-              </span>
-              <span class="cart__discount-value cart-secondary-typography">
-                {%- render 'loading-spinner' -%}
-                <span data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
-              </span>
-            </div>
-          {% endif %}
+          <div class="summary-row hidden" id="discountRow">
+            <span class="cart__discount-label">
+              {% render 'icon-discount' %}
+              Discount
+            </span>
+            <span class="cart__discount-value cart-secondary-typography">
+              {%- render 'loading-spinner' -%}
+              <span data-discount="{{ cart.total_discount }}">-{{ cart.total_discount | money -}}</span>
+            </span>
+          </div>
 
           <div class="summary-row summary-total">
             <span>Total</span>
