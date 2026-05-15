@@ -39,7 +39,7 @@ export const loader = async ({ request }) => {
     };
 
     const [issues, total] = await Promise.all([
-      prisma.pendingPayment.findMany({
+      prisma.paymentWithNoShopifyOrders.findMany({
         where: issueWhere,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * PAGE_SIZE,
@@ -54,7 +54,7 @@ export const loader = async ({ request }) => {
           createdAt: true,
         },
       }),
-      prisma.pendingPayment.count({ where: issueWhere }),
+      prisma.paymentWithNoShopifyOrders.count({ where: issueWhere }),
     ]);
 
     return { tab: "issues", issues, total, page, pageSize: PAGE_SIZE, shop };
@@ -92,7 +92,7 @@ export const loader = async ({ request }) => {
       },
     }),
     prisma.order.count({ where }),
-    prisma.pendingPayment.count({ where: { shopDomain: shop, status: "ORDER_FAILED" } }),
+    prisma.paymentWithNoShopifyOrders.count({ where: { shopDomain: shop, status: "ORDER_FAILED" } }),
   ]);
 
   return { tab: "orders", orders, total, page, pageSize: PAGE_SIZE, shop, issueCount };

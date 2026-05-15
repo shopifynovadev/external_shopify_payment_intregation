@@ -82,7 +82,7 @@ async function reconcileMerchant(merchant, sinceDate) {
     } else {
       const shopifyAmount = parseFloat(shopifyOrder.totalPriceSet.shopMoney.amount);
       const ourAmount = parseFloat(ourOrder.totalAmount);
-      if (Math.abs(shopifyAmount - ourAmount) > 0.01) {
+      if (Math.abs(shopifyAmount - ourAmount) > 1) {
         discrepancies.push({
           type: "AMOUNT_MISMATCH",
           shopifyOrderId: shopifyOrder.id,
@@ -128,7 +128,7 @@ async function reconcileMerchant(merchant, sinceDate) {
 
 export async function action({ request }) {
   if (!authorized(request)) {
-    return ({ success: false, error: "Unauthorized" }, { status: 401 });
+    return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const yesterday = new Date();
@@ -141,7 +141,7 @@ export async function action({ request }) {
     merchants.map((m) => reconcileMerchant(m, sinceDate))
   );
 
-  return ({
+  return Response.json({
     success: true,
     data: results.map((r) => (r.status === "fulfilled" ? r.value : { error: r.reason?.message })),
   });

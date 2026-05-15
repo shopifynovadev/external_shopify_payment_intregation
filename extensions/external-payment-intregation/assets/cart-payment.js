@@ -415,6 +415,50 @@
       if (btn) btn.disabled = !valid;
     }
 
+    // ─── Shipping Rate Changed Handler ───────────────────────────────────────
+
+    async handleShippingRateChanged() {
+      // Fetch fresh rates from backend
+      let freshConfig;
+      try {
+        const res = await fetch(`${this.appUrl}/api/shipping/config?shop=${this.shopDomain}`);
+        const json = await res.json();
+        if (!json.success) throw new Error();
+        freshConfig = json.data;
+        this.setCookie("nova_sc", JSON.stringify(freshConfig), 2);
+        this.cachedShippingDetails = JSON.stringify(freshConfig);
+      } catch {
+        this.showBanner("Shipping rates changed. Please refresh the page.", "error");
+        return;
+      }
+
+      // Recalculate new shipping total
+      const bdRates = freshConfig.BD ?? {};
+      const weightRates = {};
+      const namedRates = {};
+      for (const [key, price] of Object.entries(bdRates)) {
+        if (!isNaN(Number(key))) weightRates[Number(key)] = price;
+        else namedRates[key] = price;
+      }
+      const divisionRate = this.getDivisionRate(namedRates, this.selectedDivision);
+      const result = await this.calculateShipping(weightRates, divisionRate);
+      const newTotal = result.total;
+
+      // Update displayed shipping
+      this.weightShipping = result.weightTotal;
+      this.renderShippingResult({ ...result, division: this.selectedDivision });
+      this.updateSummary();
+
+      // Ask customer to confirm
+      const confirmed = window.confirm(
+        `Shipping cost has been updated to ৳${newTotal}.\n\nDo you want to continue with the new rate?`
+      );
+
+      if (confirmed) {
+        this.pay();
+      }
+    }
+
     // ─── Payment ──────────────────────────────────────────────────────────────
 
     async pay() {
@@ -460,8 +504,10 @@
         this.setProcessing(false);
         if (json.code === "SHIPPING_RATE_CHANGED") {
           this.clearCookie("nova_sc");
+          await this.handleShippingRateChanged();
+        } else {
+          this.showBanner(json.error, "error");
         }
-        this.showBanner(json.error, "error");
       }
     }
 

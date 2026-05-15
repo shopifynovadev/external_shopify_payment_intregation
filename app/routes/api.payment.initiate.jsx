@@ -76,7 +76,6 @@ export async function action({ request }) {
     const result = await initiatePayment({
       shopDomain,
       shippingRate,
-      shippingSource,
       discountCode: discountCode ?? null,
       customerInfo,
       lineItems,

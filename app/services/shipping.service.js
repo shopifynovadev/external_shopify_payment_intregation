@@ -142,14 +142,11 @@ export async function getShippingConfig({ shopDomain, accessToken, noCache = fal
 export function calculateShipping({ config, lineItemsWithKg, namedRateTitle, expectedTotal }) {
   const bdRates = config.BD ?? {};
 
-  let weightShipping = 0;
-  for (const item of lineItemsWithKg) {
-    const rate = bdRates[item.kg];
-    if (rate != null) weightShipping += rate * item.quantity;
-  }
+  let shippingPrice;
+  let shippingTitle;
 
-  let namedRatePrice = 0;
   if (namedRateTitle) {
+    // Flat rate chosen by name (e.g. "Inside Dhaka", "Outside Dhaka")
     const price = bdRates[namedRateTitle];
     if (price == null) {
       throw Object.assign(
@@ -157,10 +154,18 @@ export function calculateShipping({ config, lineItemsWithKg, namedRateTitle, exp
         { code: "INVALID_SHIPPING" }
       );
     }
-    namedRatePrice = price;
+    shippingPrice = price;
+    shippingTitle = namedRateTitle;
+  } else {
+    // Weight-based: rate per item multiplied by quantity
+    let weightShipping = 0;
+    for (const item of lineItemsWithKg) {
+      const rate = bdRates[item.kg];
+      if (rate != null) weightShipping += rate * item.quantity;
+    }
+    shippingPrice = parseFloat(weightShipping.toFixed(2));
+    shippingTitle = shippingPrice > 0 ? "Weight-based shipping" : "Free Shipping";
   }
-
-  const shippingPrice = parseFloat((weightShipping + namedRatePrice).toFixed(2));
 
   if (Math.abs(shippingPrice - expectedTotal) > 1) {
     throw Object.assign(
@@ -168,8 +173,6 @@ export function calculateShipping({ config, lineItemsWithKg, namedRateTitle, exp
       { code: "SHIPPING_RATE_CHANGED" }
     );
   }
-
-  const shippingTitle = namedRateTitle ?? (weightShipping > 0 ? "Weight-based shipping" : "Free Shipping");
 
   return { shippingPrice, shippingTitle };
 }

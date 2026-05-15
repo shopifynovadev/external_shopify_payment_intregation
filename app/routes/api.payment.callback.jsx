@@ -12,7 +12,7 @@ export async function loader({ request }) {
     return redirect(`/?payment_error=missing_payment_id`);
   }
 
-  const pending = await prisma.pendingPayment.findUnique({ where: { bkashPaymentId: paymentID } });
+  const pending = await prisma.paymentWithNoShopifyOrders.findUnique({ where: { bkashPaymentId: paymentID } });
 
   if (!pending) {
     return redirect(`/?payment_error=not_found`);
@@ -23,7 +23,7 @@ export async function loader({ request }) {
   const cartBase = `https://${shopDomain}/cart`;
 
   if (status === "cancel" || status === "failure") {
-    await prisma.pendingPayment.update({
+    await prisma.paymentWithNoShopifyOrders.update({
       where: { id: pendingPaymentId },
       data: { status: "FAILED", errorDetails: `bKash callback status: ${status}` },
     });
@@ -38,7 +38,7 @@ export async function loader({ request }) {
 
   // Mark as AWAITING_EXECUTE (idempotent — only if still PENDING)
   if (pending.status === "PENDING") {
-    await prisma.pendingPayment.update({
+    await prisma.paymentWithNoShopifyOrders.update({
       where: { id: pendingPaymentId },
       data: { status: "AWAITING_EXECUTE" },
     });
@@ -47,16 +47,21 @@ export async function loader({ request }) {
   const result = await executePayment({ shopDomain, paymentID });
 
   if (!result.success) {
-    await prisma.pendingPayment.update({
+    console.error(`[bKash execute FAILED] pendingPaymentId=${pendingPaymentId} paymentID=${paymentID} reason=${result.reason}`);
+    await prisma.paymentWithNoShopifyOrders.update({
       where: { id: pendingPaymentId },
       data: { status: "FAILED", errorDetails: result.reason },
     });
     return redirect(`${cartBase}?payment_id=${pendingPaymentId}&payment_status=failed`);
   }
 
-  await prisma.pendingPayment.update({
+  // Store execute response + confirmed paid amount
+  await prisma.paymentWithNoShopifyOrders.update({
     where: { id: pendingPaymentId },
-    data: { bkashExecuteResponse: result.raw },
+    data: {
+      bkashExecuteResponse: result.raw,
+      paidAmount: parseFloat(result.amount),
+    },
   });
 
   // Fire order creation — non-blocking, customer gets redirected immediately

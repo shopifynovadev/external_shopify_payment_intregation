@@ -3,7 +3,6 @@ import prisma from "../db.server.js";
 import { paymentQueue } from "../queues/index.js";
 import { createPayment } from "./bkash.service.js";
 import { validateDiscount } from "./discount.service.js";
-import { resolveShippingRate } from "../models/shippingRate.server.js";
 import { getShippingConfig, calculateShipping } from "./shipping.service.js";
 
 const PAYMENT_TTL_MS = 30 * 60 * 1000;
@@ -37,8 +36,11 @@ async function fetchVariantData({ shopDomain, accessToken, lineItems }) {
           ... on ProductVariant {
             id
             price
-            weight
-            weightUnit
+            inventoryItem {
+              measurement {
+                weight { value unit }
+              }
+            }
           }
         }
       }`,
@@ -53,9 +55,10 @@ async function fetchVariantData({ shopDomain, accessToken, lineItems }) {
   const variantMap = {};
   for (const node of json.data.nodes ?? []) {
     if (node?.id) {
+      const w = node.inventoryItem?.measurement?.weight;
       variantMap[node.id] = {
         price: parseFloat(node.price),
-        kg: toKg(node.weight ?? 0, node.weightUnit ?? "KILOGRAMS"),
+        kg: toKg(w?.value ?? 0, w?.unit ?? "KILOGRAMS"),
       };
     }
   }
@@ -65,7 +68,6 @@ async function fetchVariantData({ shopDomain, accessToken, lineItems }) {
 export async function initiatePayment({
   shopDomain,
   shippingRate,
-  shippingSource = "db",
   discountCode,
   customerInfo,
   lineItems,
@@ -77,7 +79,7 @@ export async function initiatePayment({
     throw Object.assign(new Error("paymentPercentage must be a number between 1 and 100"), { code: "INVALID_PERCENTAGE" });
   }
 
-  const existing = await prisma.pendingPayment.findFirst({
+  const existing = await prisma.paymentWithNoShopifyOrders.findFirst({
     where: {
       shopDomain,
       status: "PENDING",
@@ -111,7 +113,7 @@ export async function initiatePayment({
   let shippingTitle = "No Shipping";
   let shippingPrice = 0;
 
-  if (shippingSource === "shopify") {
+  if (shippingRate) {
     const config = await getShippingConfig({ shopDomain, accessToken, noCache: true });
     const result = calculateShipping({
       config,
@@ -121,17 +123,6 @@ export async function initiatePayment({
     });
     shippingTitle = result.shippingTitle;
     shippingPrice = result.shippingPrice;
-  } else if (shippingRate?.code) {
-    const resolved = await resolveShippingRate({
-      id: shippingRate.code,
-      shopDomain,
-      orderTotal: subtotal,
-    });
-    if (!resolved) {
-      throw Object.assign(new Error("Invalid or inactive shipping rate"), { code: "INVALID_SHIPPING" });
-    }
-    shippingTitle = resolved.title;
-    shippingPrice = resolved.price;
   }
 
   // Validate discount if provided
@@ -179,7 +170,7 @@ export async function initiatePayment({
     bkashURL,
   };
 
-  const pending = await prisma.pendingPayment.create({
+  const pending = await prisma.paymentWithNoShopifyOrders.create({
     data: {
       shopDomain,
       idempotencyKey,
@@ -188,6 +179,7 @@ export async function initiatePayment({
       cartSnapshot,
       customerInfo,
       totalAmount: total,
+      paymentPercentage: pct,
       expiresAt: new Date(Date.now() + PAYMENT_TTL_MS),
     },
   });
@@ -196,7 +188,7 @@ export async function initiatePayment({
 }
 
 export async function getPaymentStatus(paymentId) {
-  const payment = await prisma.pendingPayment.findUnique({
+  const payment = await prisma.paymentWithNoShopifyOrders.findUnique({
     where: { id: paymentId },
     include: { order: { select: { shopifyOrderNumber: true, bkashTransactionId: true } } },
   });

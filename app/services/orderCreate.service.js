@@ -2,27 +2,9 @@ import prisma from "../db.server.js";
 import { orderCreateQueue } from "../queues/index.js";
 import { refundPayment } from "./bkash.service.js";
 
-const DRAFT_ORDER_CREATE = `
-  mutation DraftOrderCreate($input: DraftOrderInput!) {
-    draftOrderCreate(input: $input) {
-      draftOrder { id legacyResourceId }
-      userErrors { field message }
-    }
-  }
-`;
-
-const DRAFT_ORDER_COMPLETE = `
-  mutation DraftOrderComplete($id: ID!) {
-    draftOrderComplete(id: $id) {
-      draftOrder { order { id name } }
-      userErrors { field message }
-    }
-  }
-`;
-
-const ORDER_MARK_PAID = `
-  mutation OrderMarkAsPaid($input: OrderMarkAsPaidInput!) {
-    orderMarkAsPaid(input: $input) {
+const ORDER_CREATE = `
+  mutation OrderCreate($order: OrderCreateOrderInput!, $options: OrderCreateOptionsInput) {
+    orderCreate(order: $order, options: $options) {
       order { id name }
       userErrors { field message }
     }
@@ -59,15 +41,20 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
     ? `bKash Transaction ID: ${bkashTrxID}`
     : `bKash Transaction ID: ${bkashTrxID}\nPaid via bKash: ৳${paidAmount} of ৳${snap.total} (${pct}%)\nRemaining balance: ৳${parseFloat((snap.total - paidAmount).toFixed(2))}`;
 
-  const input = {
+  const order = {
     lineItems: snap.lineItems.map((item) => ({
       variantId: item.variantId,
       quantity: item.quantity,
     })),
-    shippingLine: {
-      title: snap.shippingTitle,
-      price: String(snap.shippingPrice),
-    },
+    shippingLines: [
+      {
+        title: snap.shippingTitle,
+        priceSet: {
+          shopMoney: { amount: String(snap.shippingPrice), currencyCode: "BDT" },
+          presentmentMoney: { amount: String(snap.shippingPrice), currencyCode: "BDT" },
+        },
+      },
+    ],
     shippingAddress: {
       firstName: customer.name.split(" ")[0],
       lastName: customer.name.split(" ").slice(1).join(" ") || "-",
@@ -77,58 +64,45 @@ async function createShopifyOrder({ shopDomain, accessToken, pendingPayment, bka
       countryCode: "BD",
       zip: "0000",
     },
-    email: customer.email ?? undefined,
+    transactions: [
+      {
+        kind: "SALE",
+        status: "SUCCESS",
+        amountSet: {
+          shopMoney: { amount: String(paidAmount), currencyCode: "BDT" },
+          presentmentMoney: { amount: String(paidAmount), currencyCode: "BDT" },
+        },
+      },
+    ],
     tags: isFullPayment
       ? [`nova-bkash`, `bkash-trx:${bkashTrxID}`]
       : [`nova-bkash`, `bkash-trx:${bkashTrxID}`, `partial-payment-${pct}pct`],
     note: paymentNote,
-    ...(snap.discountCode
-      ? {
-          appliedDiscount: {
-            title: snap.discountCode,
-            value: snap.discountAmount,
-            valueType: "FIXED_AMOUNT",
-            description: `Discount: ${snap.discountCode}`,
-          },
-        }
-      : {}),
+    ...(customer.email ? { email: customer.email } : {}),
+    ...(snap.discountCode ? { discountCodes: [snap.discountCode] } : {}),
   };
 
-  const createData = await adminGraphQL({
+  const data = await adminGraphQL({
     shopDomain,
     accessToken,
-    query: DRAFT_ORDER_CREATE,
-    variables: { input },
+    query: ORDER_CREATE,
+    variables: {
+      order,
+      options: { sendReceipt: !!customer.email },
+    },
   });
 
-  const userErrors = createData.draftOrderCreate?.userErrors ?? [];
+  const userErrors = data.orderCreate?.userErrors ?? [];
   if (userErrors.length) throw new Error(userErrors[0].message);
 
-  const draftOrderId = createData.draftOrderCreate.draftOrder.id;
+  const createdOrder = data.orderCreate.order;
 
-  const completeData = await adminGraphQL({
-    shopDomain,
-    accessToken,
-    query: DRAFT_ORDER_COMPLETE,
-    variables: { id: draftOrderId },
-  });
-
-  const completeErrors = completeData.draftOrderComplete?.userErrors ?? [];
-  if (completeErrors.length) throw new Error(completeErrors[0].message);
-
-  const order = completeData.draftOrderComplete.draftOrder.order;
-
-  // Only mark as paid when customer paid 100% — partial payments stay "Pending" in Shopify
-  if (isFullPayment) {
-    await adminGraphQL({
-      shopDomain,
-      accessToken,
-      query: ORDER_MARK_PAID,
-      variables: { input: { id: order.id } },
-    });
-  }
-
-  return { shopifyOrderId: order.id, shopifyOrderNumber: order.name, shopifyDraftOrderId: draftOrderId, paidAmount, paymentPercentage: pct };
+  return {
+    shopifyOrderId: createdOrder.id,
+    shopifyOrderNumber: createdOrder.name,
+    paidAmount,
+    paymentPercentage: pct,
+  };
 }
 
 export async function processOrderCreation({ pendingPaymentId, shopDomain, bkashTrxID, amount }) {
@@ -139,7 +113,7 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
 
   if (!session) throw new Error(`No offline session found for ${shopDomain}`);
 
-  const pendingPayment = await prisma.pendingPayment.findUnique({
+  const pendingPayment = await prisma.paymentWithNoShopifyOrders.findUnique({
     where: { id: pendingPaymentId },
   });
 
@@ -151,8 +125,8 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
   // Hard reject if amounts don't match — for partial payments compare chargedAmount, not full total
   const expectedAmount = snap.chargedAmount ?? snap.total;
   const difference = Math.abs(parseFloat(amount) - parseFloat(expectedAmount));
-  if (difference > 0.01) {
-    await prisma.pendingPayment.update({
+  if (difference > 1) {
+    await prisma.paymentWithNoShopifyOrders.update({
       where: { id: pendingPaymentId },
       data: { status: "FAILED", errorDetails: `Amount mismatch: expected ${expectedAmount}, got ${amount}` },
     });
@@ -166,7 +140,7 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
     });
     if (!amountMismatchRefund.success) {
       console.error(`[CRITICAL] Refund failed for pendingPaymentId=${pendingPaymentId} reason=${amountMismatchRefund.reason}`);
-      await prisma.pendingPayment.update({
+      await prisma.paymentWithNoShopifyOrders.update({
         where: { id: pendingPaymentId },
         data: { errorDetails: `Amount mismatch + REFUND_FAILED: ${amountMismatchRefund.reason}` },
       });
@@ -198,7 +172,7 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
     if (!shopifyOrderData) {
       // bKash payment was successful but Shopify order creation failed.
       // Do NOT refund — merchant will handle manually via the Payment Issues tab.
-      await prisma.pendingPayment.update({
+      await prisma.paymentWithNoShopifyOrders.update({
         where: { id: pendingPaymentId },
         data: {
           status: "ORDER_FAILED",
@@ -209,7 +183,7 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
       return;
     }
 
-    const { shopifyOrderId, shopifyOrderNumber, shopifyDraftOrderId, paidAmount, paymentPercentage } = shopifyOrderData;
+    const { shopifyOrderId, shopifyOrderNumber, paidAmount, paymentPercentage } = shopifyOrderData;
 
     // Persist order and upsert daily summary atomically
     await prisma.$transaction(async (tx) => {
@@ -218,12 +192,13 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
           shopDomain,
           shopifyOrderId,
           shopifyOrderNumber,
-          shopifyDraftOrderId,
+          shopifyDraftOrderId: null,
           pendingPaymentId,
           bkashTransactionId: bkashTrxID,
           totalAmount: snap.total,
           paidAmount,
           paymentPercentage,
+          shopifyPaymentStatus: paidAmount >= snap.total ? "PAID" : "PARTIALLY_PAID",
           status: "PAID",
           customerName: pendingPayment.customerInfo.name,
           customerPhone: pendingPayment.customerInfo.phone,
@@ -254,7 +229,7 @@ export async function processOrderCreation({ pendingPaymentId, shopDomain, bkash
         },
       });
 
-      await tx.pendingPayment.update({
+      await tx.paymentWithNoShopifyOrders.update({
         where: { id: pendingPaymentId },
         data: { status: "COMPLETED" },
       });

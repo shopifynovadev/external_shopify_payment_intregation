@@ -11,7 +11,7 @@ export async function action({ request }) {
     return ({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await prisma.pendingPayment.updateMany({
+  const result = await prisma.paymentWithNoShopifyOrders.updateMany({
     where: {
       status: { in: ["PENDING", "AWAITING_EXECUTE"] },
       expiresAt: { lt: new Date() },
