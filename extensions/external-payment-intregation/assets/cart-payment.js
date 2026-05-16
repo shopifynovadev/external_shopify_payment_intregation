@@ -27,13 +27,6 @@
       this._cartSyncTimer  = null;
       this._cartObserver   = null;
 
-      // Expose instance globally so window.updateShippingValues and
-      // cart-discount.js can read selectedRate
-      window.CheckoutBkashForm = this;
-
-      // Attach all window-level helpers that cart-discount.js depends on
-      this._defineWindowHelpers();
-
       this._init();
       this._bindEvents();
     }
@@ -159,95 +152,91 @@
       }
     }
 
-    // ─── Window Helpers (called by cart-discount.js) ──────────────────────────
+    // Called by: shipping radio change, showCartErrorFromURL, cart-discount.js
+    _updateShippingValues = () => {
+      const namedRate   = this.selectedRate?.price ?? 0;
+      const shippingRate = namedRate;
 
-    _defineWindowHelpers() {
-      // Called by: shipping radio change, showCartErrorFromURL, cart-discount.js
-      window.updateShippingValues = () => {
-        const namedRate   = this.selectedRate?.price ?? 0;
-        const shippingRate = namedRate;
+      const subtotalCents = parseInt(
+        this.$("subtotal")?.dataset?.subTotal ??
+        this.$("subtotal-mobile")?.dataset?.subTotal ?? 0,
+        10
+      );
+      const discountCents = parseInt(
+        document.querySelector("[data-discount]")?.dataset?.discount ?? 0,
+        10
+      );
 
-        const subtotalCents = parseInt(
-          this.$("subtotal")?.dataset?.subTotal ??
-          this.$("subtotal-mobile")?.dataset?.subTotal ?? 0,
-          10
-        );
-        const discountCents = parseInt(
-          document.querySelector("[data-discount]")?.dataset?.discount ?? 0,
-          10
-        );
+      const subtotalMoney = (subtotalCents / 100).toFixed(2);
+      const shippingMoney = shippingRate.toFixed(2);
+      const totalMoney    = Math.max(
+        0,
+        (subtotalCents / 100) + shippingRate - (discountCents / 100)
+      ).toFixed(2);
 
-        const subtotalMoney = (subtotalCents / 100).toFixed(2);
-        const shippingMoney = shippingRate.toFixed(2);
-        const totalMoney    = Math.max(
-          0,
-          (subtotalCents / 100) + shippingRate - (discountCents / 100)
-        ).toFixed(2);
+      // Update both desktop and mobile summary spans
+      const updates = {
+        "subtotal":            subtotalMoney,
+        "subtotal-mobile":     subtotalMoney,
+        "shippingCost":        shippingMoney,
+        "shippingCost-mobile": shippingMoney,
+        "total":               totalMoney,
+        "total-mobile":        totalMoney,
+      };
+      Object.entries(updates).forEach(([id, value]) => {
+        const el = this.$(id);
+        if (el) el.textContent = value;
+      });
 
-        // Update both desktop and mobile summary spans
-        const updates = {
-          "subtotal":            subtotalMoney,
-          "subtotal-mobile":     subtotalMoney,
-          "shippingCost":        shippingMoney,
-          "shippingCost-mobile": shippingMoney,
-          "total":               totalMoney,
-          "total-mobile":        totalMoney,
-        };
-        Object.entries(updates).forEach(([id, value]) => {
+      // Also push updated shipping into payment options widget
+      if (typeof window.novaPaymentOptions?.setShipping === "function") {
+        window.novaPaymentOptions.setShipping(shippingRate);
+      }
+    };
+
+    // Called by: cart-discount.js after apply / remove
+    _syncFormSummaryAfterDiscount = async () => {
+      try {
+        const cart = await fetch("/cart.js").then(r => r.json());
+
+        const subtotalCents = cart.original_total_price;
+        const discountCents = cart.total_discount;
+
+        // Update subtotal data attributes + text (both layouts)
+        ["subtotal", "subtotal-mobile"].forEach(id => {
           const el = this.$(id);
-          if (el) el.textContent = value;
+          if (!el) return;
+          el.dataset.subTotal = subtotalCents;
+          el.textContent = (subtotalCents / 100).toFixed(2);
         });
 
-        // Also push updated shipping into payment options widget
-        if (typeof window.novaPaymentOptions?.setShipping === "function") {
-          window.novaPaymentOptions.setShipping(shippingRate);
-        }
-      };
-
-      // Called by: cart-discount.js after apply / remove
-      window.syncFormSummaryAfterDiscount = async () => {
-        try {
-          const cart = await fetch("/cart.js").then(r => r.json());
-
-          const subtotalCents = cart.original_total_price;
-          const discountCents = cart.total_discount;
-
-          // Update subtotal data attributes + text (both layouts)
-          ["subtotal", "subtotal-mobile"].forEach(id => {
-            const el = this.$(id);
-            if (!el) return;
-            el.dataset.subTotal = subtotalCents;
-            el.textContent = (subtotalCents / 100).toFixed(2);
-          });
-
-          // Update discount row visibility + value (both layouts)
-          ["discountRow", "discountRow-mobile"].forEach(id => {
-            const row = this.$(id);
-            if (!row) return;
-            if (discountCents > 0) {
-              row.classList.remove("hidden");
-              const valueEl = row.querySelector("[data-discount]");
-              if (valueEl) {
-                valueEl.dataset.discount = discountCents;
-                valueEl.textContent = `-${(discountCents / 100).toFixed(2)}`;
-              }
-            } else {
-              row.classList.add("hidden");
+        // Update discount row visibility + value (both layouts)
+        ["discountRow", "discountRow-mobile"].forEach(id => {
+          const row = this.$(id);
+          if (!row) return;
+          if (discountCents > 0) {
+            row.classList.remove("hidden");
+            const valueEl = row.querySelector("[data-discount]");
+            if (valueEl) {
+              valueEl.dataset.discount = discountCents;
+              valueEl.textContent = `-${(discountCents / 100).toFixed(2)}`;
             }
-          });
-
-          // Recalculate total with current shipping then update all spans
-          window.updateShippingValues();
-
-          // Also update payment options widget with fresh cart total
-          if (typeof window.novaPaymentOptions?.setCartTotal === "function") {
-            window.novaPaymentOptions.setCartTotal(cart.total_price);
+          } else {
+            row.classList.add("hidden");
           }
-        } catch (err) {
-          console.error("[CheckoutBkashForm] syncFormSummaryAfterDiscount failed:", err);
+        });
+
+        // Recalculate total with current shipping then update all spans
+        this._updateShippingValues();
+
+        // Also update payment options widget with fresh cart total
+        if (typeof window.novaPaymentOptions?.setCartTotal === "function") {
+          window.novaPaymentOptions.setCartTotal(cart.total_price);
         }
-      };
-    }
+      } catch (err) {
+        console.error("[CheckoutBkashForm] syncFormSummaryAfterDiscount failed:", err);
+      }
+    };
 
     // ─── Cookie Helpers ───────────────────────────────────────────────────────
 
@@ -281,6 +270,8 @@
     async _loadCart() {
       this.cartData = await this._getCartItems();
       this._updateSummary();
+      // Update payment option amounts
+      this.updatePaymentOptionAmounts();
     }
 
     // ─── Shipping Config ──────────────────────────────────────────────────────
@@ -419,6 +410,8 @@
 
       // window.updateShippingValues();
       this._updateSummary();
+      // Update payment option amounts
+      this.updatePaymentOptionAmounts();
     }
 
     async _calculateShipping(weightRates, divisionRate) {
@@ -513,7 +506,7 @@
             price: parseFloat(radio.value),
             title: radio.dataset.label,
           };
-          window.updateShippingValues();
+          this._updateShippingValues();
         });
       }
 
@@ -581,7 +574,7 @@
             this.selectedDivision
           );
         } else {
-          window.updateShippingValues();
+          this._updateShippingValues();
         }
       } catch {
         // Silent fail — values stay as last known state
@@ -606,6 +599,8 @@
 
         this.discountAmount = (data.total_discount ?? 0) / 100;
         this._updateSummary();
+        // Update payment option amounts
+        this.updatePaymentOptionAmounts();
       });
     }
 
@@ -688,6 +683,7 @@ class CartDiscountComponent extends HTMLElement {
     this.cartDiscountError = null;
     this.activeFetch = null;
     this.$ = (id) => document.getElementById(id);
+    this.CheckoutBkashForm = document.querySelector("checkout-bkash-form");
 
     this.applyDiscount = this.applyDiscount.bind(this);
     this.removeDiscount = this.removeDiscount.bind(this);
@@ -828,8 +824,8 @@ class CartDiscountComponent extends HTMLElement {
         if (html) this.morphSection(id, html, selector);
       });
       this.renderDiscountCodeElement(data.discount_codes);
-      window.updateShippingValues();
-      window.syncFormSummaryAfterDiscount();
+      this.CheckoutBkashForm._updateShippingValues();
+      this.CheckoutBkashForm._syncFormSummaryAfterDiscount();
     } catch (e) {
       // Handle error
     } finally {
@@ -885,8 +881,8 @@ class CartDiscountComponent extends HTMLElement {
         if (html) this.morphSection(id, html, selector);
       });
       this.renderDiscountCodeElement(data.discount_codes);
-      window.updateShippingValues();
-      window.syncFormSummaryAfterDiscount();
+      this.CheckoutBkashForm._updateShippingValues();
+      this.CheckoutBkashForm._syncFormSummaryAfterDiscount();
     } catch (e) {
       // Handle fetch error
     } finally {

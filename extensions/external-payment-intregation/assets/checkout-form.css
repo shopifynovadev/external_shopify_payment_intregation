@@ -337,7 +337,7 @@
   transition: border-color 0.15s ease;
 }
 
-.checkout-form_shipping-option__radio-dot::after
+.checkout-form_shipping-option__radio-dot::after,
 .checkout-form_payment-option__radio-dot::after {
   content: '';
   position: absolute;
