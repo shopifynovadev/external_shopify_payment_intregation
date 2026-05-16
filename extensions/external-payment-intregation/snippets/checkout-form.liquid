@@ -3,16 +3,6 @@
 <script src="{{ 'cart-payment.js' | asset_url }}" defer></script>
 
 {% liquid
-  assign discount_codes = cart.cart_level_discount_applications | where: 'type', 'discount_code' | map: 'title'
-  for item in cart.items
-    for allocation in item.line_level_discount_allocations
-      if allocation.discount_application.type == 'discount_code'
-        assign discount_codes = item.line_level_discount_allocations | slice: forloop.index0 | map: 'discount_application' | map: 'title' | concat: discount_codes
-      endif
-    endfor
-  endfor
-
-  assign discount_codes = discount_codes | uniq
   assign app_url = shop.metafields.nova_bkash.app_url.value
 %}
 
@@ -230,7 +220,7 @@
             {% comment %} Discount Code {% endcomment %}
             <div class="checkout-card">
               {% if settings.show_cart_discount %}
-                {% render 'cart-discount', discount_codes: discount_codes %}
+                {% render 'cart-discount' %}
               {% endif %}
             </div>
           </div>
@@ -294,7 +284,7 @@
       {% comment %} Discount Code {% endcomment %}
       <div class="checkout-card">
         {% if section_details.settings.show_cart_discount %}
-          {% render 'cart-discount', discount_codes: discount_codes %}
+          {% render 'cart-discount' %}
         {% endif %}
       </div>
     </div>

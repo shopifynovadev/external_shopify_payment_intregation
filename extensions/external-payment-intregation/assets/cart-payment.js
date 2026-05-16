@@ -5,7 +5,10 @@
 
     connectedCallback() {
       this.appUrl        = this.dataset.appUrl;
-      this.shopDomain    = this.dataset.shop;
+      this.shopDomain = this.dataset.shop;
+      
+      // Shorthand DOM helper
+      this.$ = (id) => document.getElementById(id);
 
       // Cart & shipping state
       this.cartData             = null;
@@ -18,13 +21,11 @@
       this.discountCode    = null;
       this.discountAmount  = 0;
       this.discountApplied = false;
+      this.discountElement = this.querySelector("cart-discount-component");
 
       // Internal timers / observers
       this._cartSyncTimer  = null;
       this._cartObserver   = null;
-
-      // Shorthand DOM helper
-      this.$ = (id) => document.getElementById(id);
 
       // Expose instance globally so window.updateShippingValues and
       // cart-discount.js can read selectedRate
@@ -485,20 +486,20 @@
       this.selectedRate = { price: total, title: `${division}-delivery` };
 
       container.innerHTML = `
-        <label class="checkout-form_payment-option" data-type="full">
+        <label class="checkout-form_shipping-option" data-type="full">
           <input
-            class="checkout-form_payment-option__input"
+            class="checkout-form_shipping-option__input"
             type="radio"
             name="shippingMethod"
             value="${total}"
             data-label="${division}-delivery"
             checked
           >
-          <span class="checkout-form_payment-option__card">
-            <span class="checkout-form_payment-option__radio-dot"></span>
-            <span class="checkout-form_payment-option__text">
-              <span class="checkout-form_payment-option__title">Total Shipping</span>
-              <span class="checkout-form_payment-option__amount" data-amount>৳${total}</span>
+          <span class="checkout-form_shipping-option__card">
+            <span class="checkout-form_shipping-option__radio-dot"></span>
+            <span class="checkout-form_shipping-option__text">
+              <span class="checkout-form_shipping-option__title">Total Shipping</span>
+              <span class="checkout-form_shipping-option__amount" data-amount>৳${total}</span>
             </span>
           </span>
         </label>
@@ -617,13 +618,7 @@
       const totalDesktopEl = this.$("total");
       const shippingMobileEl = this.$("shippingCost-mobile");
       const shippingDesktopEl = this.$("shippingCost");
-      // if (!subtotalEl) {
-      //   // Summary elements not in DOM — delegate to Liquid inline summary
-      //   window.updateShippingValues();
-      //   return;
-      // }
 
-      console.log(this.cartData);
       const subtotal = this.cartData ? this.cartData.original_total_price / 100 : 0;
       const shipping = (this.selectedRate?.price ?? 0);
       const discount = this.cartData ? this.cartData.total_discount / 100 : 0;
@@ -643,74 +638,9 @@
           discountRow.classList.remove("hidden");
           discountRow.querySelector(".cart__discount-value span").textContent = `-৳${discount.toFixed(2)}`;
         }
-      })
-    }
-
-    // ─── Discount (Nova/bKash backend validation — legacy) ────────────────────
-
-    async _applyDiscount() {
-      const code = this.$("checkout-form_discount")?.value.trim();
-      if (!code) return;
-
-      const msgEl = this.$("checkout-form_discount-msg");
-      if (msgEl) {
-        msgEl.textContent = "Validating...";
-        msgEl.style.color = "#6d7175";
-      }
-
-      const subtotal = this.cartData.total_price / 100;
-      const res      = await fetch(`${this.appUrl}/api/discount/validate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shopDomain: this.shopDomain,
-          code,
-          cartSubtotal: subtotal,
-        }),
       });
-      const json = await res.json();
 
-      if (json.success && json.data.valid) {
-        this.discountCode    = code;
-        this.discountAmount  = json.data.discountAmount;
-        this.discountApplied = true;
-        if (msgEl) {
-          msgEl.textContent = `✓ Code applied — saving ৳${json.data.discountAmount.toFixed(2)}`;
-          msgEl.style.color = "#008060";
-        }
-        const discountInput = this.$("checkout-form_discount");
-        const applyBtn      = this.$("checkout-form_apply-discount");
-        if (discountInput) discountInput.disabled = true;
-        if (applyBtn)      applyBtn.disabled      = true;
-      } else {
-        if (msgEl) {
-          msgEl.textContent = `✗ ${json.data?.reason ?? json.error ?? "Invalid code"}`;
-          msgEl.style.color = "#d72c0d";
-        }
-        this.discountCode    = null;
-        this.discountAmount  = 0;
-        this.discountApplied = false;
-      }
-      this._updateSummary();
-    }
-
-    // ─── Form Validation ──────────────────────────────────────────────────────
-
-    _validateForm() {
-      const name     = this.$("checkout-form_name")?.value.trim();
-      const phone    = this.$("checkout-form_phone")?.value.trim();
-      const district = this.$("checkout-form_district")?.value.trim();
-      const thana    = this.$("checkout-form_thana")?.value.trim();
-      const street   = this.$("checkout-form_street")?.value.trim();
-
-      const hasNamedOptions =
-        (this.$("checkout-form_shipping-rates")
-          ?.querySelectorAll('input[type="radio"]').length ?? 0) > 0;
-      const hasShipping = !hasNamedOptions || !!this.selectedRate;
-
-      const valid = name && phone && district && thana && street && hasShipping;
-      const btn   = this.$("payWithBkash");
-      if (btn) btn.disabled = !valid;
+      this.discountElement.renderDiscountCodeElement(this.cartData.discount_codes);
     }
 
     // ─── Return from bKash ────────────────────────────────────────────────────
@@ -731,13 +661,6 @@
 
     // ─── UI Helpers ───────────────────────────────────────────────────────────
 
-    _setProcessing(on) {
-      const form       = this.$("checkout-form_form");
-      const processing = this.$("checkout-form_processing");
-      if (form)       form.style.display       = on ? "none"  : "block";
-      if (processing) processing.style.display = on ? "block" : "none";
-    }
-
     _showBanner(msg, type) {
       const el = this.$("checkout-form_banner");
       if (!el) return;
@@ -757,3 +680,276 @@
     customElements.define("checkout-bkash-form", CheckoutBkashForm);
   }
 })();
+
+// Discount Function
+class CartDiscountComponent extends HTMLElement {
+  constructor() {
+    super();
+    this.cartDiscountError = null;
+    this.activeFetch = null;
+    this.$ = (id) => document.getElementById(id);
+
+    this.applyDiscount = this.applyDiscount.bind(this);
+    this.removeDiscount = this.removeDiscount.bind(this);
+  }
+
+  connectedCallback() {
+    this.cartDiscountError = this.querySelector('[ref="cartDiscountError"]');
+
+    const applyBtn = this.querySelector('[on\\:click="/applyDiscount"]');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', this.applyDiscount);
+    }
+
+    this.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
+      btn.addEventListener('click', this.removeDiscount);
+    });
+  }
+
+  disconnectedCallback() {
+    const applyBtn = this.querySelector('[on\\:click="/applyDiscount"]');
+    if (applyBtn) {
+      applyBtn.removeEventListener('click', this.applyDiscount);
+    }
+
+    this.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
+      btn.removeEventListener('click', this.removeDiscount);
+    });
+  }
+
+  createAbortController() {
+    if (this.activeFetch) {
+      this.activeFetch.abort();
+    }
+    const controller = new AbortController();
+    this.activeFetch = controller;
+    return controller;
+  }
+
+  existingDiscounts() {
+    return Array.from(this.querySelectorAll('.cart-discount__pill'))
+      .map(pill => pill.dataset.discountCode)
+      .filter(Boolean);
+  }
+
+  showAllSpinners() {
+    document.querySelectorAll('.order-summary .loading__spinner').forEach(spinner => {
+      spinner.classList.remove('hidden');
+    });
+  }
+
+  hideAllSpinners() {
+    document.querySelectorAll('.order-summary .loading__spinner').forEach(spinner => {
+      spinner.classList.add('hidden');
+    });
+  }
+
+  getSectionsToRender() {
+    const mql = window.matchMedia('(max-width: 989px)');
+    return [
+      {
+        id: 'main-cart-items',
+        section: document.getElementById('main-cart-items').dataset.id,
+        selector: '.js-contents',
+      },
+      {
+        id: 'cart-icon-bubble',
+        section: 'cart-icon-bubble',
+        selector: '.shopify-section',
+      },
+      {
+        id: 'cart-live-region-text',
+        section: 'cart-live-region-text',
+        selector: '.shopify-section',
+      },
+      {
+        id: 'main-cart-footer',
+        section: document.getElementById('main-cart-footer')?.dataset.id,
+        selector: mql.matches ? '.order-summary.large-up-hide' : '.order-summary.small-hide.medium-hide',
+      }
+    ];
+  }
+
+  async applyDiscount(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const input = this.querySelector('input[name="discount"]');
+    const sectionId = this.dataset.sectionId;
+    const code = input?.value?.trim();
+
+    if (!input || !sectionId || !code) {
+      this.handleDiscountError({});
+      this.querySelector(".cart-discount__error-text").innerHTML = 'Discount Code Required';
+      return;
+    }
+
+    this.showAllSpinners();
+
+    const existing = this.existingDiscounts();
+    if (existing.includes(code)) return;
+
+    existing.push(code);
+    const sections = this.getSectionsToRender();
+    const abortController = this.createAbortController();
+
+    try {
+      const response = await fetch(window.routes.cart_update_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          discount: existing.join(','),
+          sections: sections.map(s => s.section),
+        }),
+        signal: abortController.signal,
+      });
+
+      const data = await response.json();
+
+      const failed = data.discount_codes.find(
+        d => d.code === code && d.applicable === false
+      );
+      if (failed) {
+        this.handleDiscountError(failed);
+        return;
+      }
+
+      document.dispatchEvent(
+        new CustomEvent('discount:update', {
+          detail: { data, origin: this.id },
+        })
+      );
+
+      sections.forEach(({ id, section, selector }) => {
+        const html = data.sections?.[section];
+        if (html) this.morphSection(id, html, selector);
+      });
+      this.renderDiscountCodeElement(data.discount_codes);
+      window.updateShippingValues();
+      window.syncFormSummaryAfterDiscount();
+    } catch (e) {
+      // Handle error
+    } finally {
+      this.activeFetch = null;
+      this.hideAllSpinners();
+    }
+  }
+
+  async removeDiscount(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.showAllSpinners();
+
+    const button = event.target.closest('button');
+    const sectionId = this.dataset.sectionId;
+    const pill = button?.closest('.cart-discount__pill');
+    const code = pill?.dataset.discountCode;
+
+    if (!button || !pill || !code || !sectionId) return;
+
+    const existing = this.existingDiscounts();
+    const index = existing.indexOf(code);
+    if (index === -1) return;
+
+    existing.splice(index, 1);
+    const sections = this.getSectionsToRender();
+    const abortController = this.createAbortController();
+
+    try {
+      const response = await fetch(window.routes.cart_update_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          discount: existing.join(','),
+          sections: sections.map(s => s.section),
+        }),
+        signal: abortController.signal,
+      });
+
+      const data = await response.json();
+
+      document.dispatchEvent(
+        new CustomEvent('discount:update', {
+          detail: { data, origin: this.id },
+        })
+      );
+
+      sections.forEach(({ id, section, selector }) => {
+        const html = data.sections?.[section];
+        if (html) this.morphSection(id, html, selector);
+      });
+      this.renderDiscountCodeElement(data.discount_codes);
+      window.updateShippingValues();
+      window.syncFormSummaryAfterDiscount();
+    } catch (e) {
+      // Handle fetch error
+    } finally {
+      this.activeFetch = null;
+      this.hideAllSpinners();
+    }
+  }
+
+  handleDiscountError(discountCode) {
+    if (this.cartDiscountError) {
+      this.cartDiscountError.classList.remove('hidden');
+      this.cartDiscountError.querySelector(".failed-discount-code").innerHTML = discountCode?.code;
+    }
+  }
+
+  morphSection(id, html, selector) {
+    const dom = new DOMParser().parseFromString(html, 'text/html');
+    const newContent = dom.querySelector(selector);
+    const target = document.querySelector(`#${id} ${selector}`);
+    if (newContent && target) {
+      target.innerHTML = newContent.innerHTML;
+    }
+  }
+
+  renderDiscountCodeElement(codes) {
+    const ul = this.querySelector('ul.cart-discount__codes');
+    if (!ul) return;
+    ul.innerHTML = "";
+    if (codes.length < 1) return;
+
+    codes.forEach(code => {
+      const li = document.createElement('li');
+      li.className = 'cart-discount__pill';
+      li.dataset.discountCode = code;
+      li.setAttribute('aria-label', `Discount applied: ${code.code}`);
+
+      li.innerHTML = `
+        <p class="cart-discount__pill-code">${code.code}</p>
+        <button
+          type="button"
+          on:click="/removeDiscount"
+          class="cart-discount__pill-remove svg-wrapper svg-wrapper--smaller button-unstyled"
+          aria-label="Remove discount: ${code.code}"
+        >
+          <svg width="7" height="8" viewBox="0 0 7 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g opacity="1">
+              <path d="M6 1.5L1 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M1 1.5L6 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </g>
+          </svg>
+        </button>
+      `;
+
+      ul.appendChild(li);
+      this.$("discount-details").open = true;
+    });
+
+    this.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
+      btn.addEventListener('click', this.removeDiscount);
+    });
+  }
+}
+
+if (!customElements.get('cart-discount-component')) {
+  customElements.define('cart-discount-component', CartDiscountComponent);
+}

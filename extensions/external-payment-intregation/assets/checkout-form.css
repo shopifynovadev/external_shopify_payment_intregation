@@ -235,8 +235,7 @@
 }
 
 /* ============================================================
-  Nova bKash — Payment Options Block
-  Matches the card-style radio selector from the design mockup
+  Nova bKash — Shipping + Payment Options Block
   ============================================================ */
 
 .checkout-form_payment-options {
@@ -269,6 +268,7 @@
 
 /* ---- Individual option card ------------------------------- */
 
+.checkout-form_shipping-option,
 .checkout-form_payment-option {
   position: relative;
   cursor: pointer;
@@ -276,6 +276,7 @@
 }
 
 /* Hide the native radio visually but keep it accessible */
+.checkout-form_shipping-option__input,
 .checkout-form_payment-option__input {
   position: absolute;
   opacity: 0;
@@ -284,6 +285,7 @@
   pointer-events: none;
 }
 
+.checkout-form_shipping-option__card,
 .checkout-form_payment-option__card {
   display: flex;
   align-items: center;
@@ -307,6 +309,7 @@
 }
 
 /* Selected state */
+.checkout-form_shipping-option__input:checked + .checkout-form_shipping-option__card,
 .checkout-form_payment-option__input:checked + .checkout-form_payment-option__card {
   border-color: #3b7de8;
   background: #f0f6ff;
@@ -314,6 +317,7 @@
 }
 
 /* Focus-visible ring for keyboard accessibility */
+.checkout-form_shipping-option__input:focus-visible + .checkout-form_shipping-option__card,
 .checkout-form_payment-option__input:focus-visible + .checkout-form_payment-option__card {
   outline: 3px solid #3b7de8;
   outline-offset: 2px;
@@ -321,6 +325,7 @@
 
 /* ---- Custom radio dot ------------------------------------- */
 
+.checkout-form_shipping-option__radio-dot,
 .checkout-form_payment-option__radio-dot {
   flex-shrink: 0;
   width: 16px;
@@ -332,6 +337,7 @@
   transition: border-color 0.15s ease;
 }
 
+.checkout-form_shipping-option__radio-dot::after
 .checkout-form_payment-option__radio-dot::after {
   content: '';
   position: absolute;
@@ -343,10 +349,12 @@
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
+.checkout-form_shipping-option__input:checked + .checkout-form_shipping-option__card .checkout-form_shipping-option__radio-dot,
 .checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__radio-dot {
   border-color: #3b7de8;
 }
 
+.checkout-form_shipping-option__input:checked + .checkout-form_shipping-option__card .checkout-form_shipping-option__radio-dot::after,
 .checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__radio-dot::after {
   opacity: 1;
   transform: scale(1);
@@ -376,6 +384,7 @@
 
 /* ---- Text (title + amount) -------------------------------- */
 
+.checkout-form_shipping-option__text,
 .checkout-form_payment-option__text {
   display: flex;
   justify-content: space-between;
@@ -385,6 +394,7 @@
   flex: 1;
 }
 
+.checkout-form_shipping-option__title,
 .checkout-form_payment-option__title {
   font-size: 14px;
   font-weight: 600;
@@ -394,12 +404,14 @@
   line-height: 1;
 }
 
+.checkout-form_shipping-option__amount,
 .checkout-form_payment-option__amount {
   font-size: 12px;
   color: #718096;
   transition: color 0.15s ease;
 }
 
+.checkout-form_shipping-option__input:checked + .checkout-form_shipping-option__card .checkout-form_shipping-option__amount,
 .checkout-form_payment-option__input:checked + .checkout-form_payment-option__card .checkout-form_payment-option__amount {
   color: #3b7de8;
 }
@@ -412,17 +424,10 @@
     flex: 1 1 calc(50% - 5px);
   }
 
+  .checkout-form_shipping-option__card,
   .checkout-form_payment-option__card {
     padding: 9px 10px;
     gap: 7px;
-  }
-
-  .checkout-form_payment-option__title {
-    font-size: 0.75rem;
-  }
-
-  .checkout-form_payment-option__amount {
-    font-size: 0.75rem;
   }
 }
 

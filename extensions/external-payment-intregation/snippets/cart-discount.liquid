@@ -4,9 +4,7 @@
   <accordion-custom class="cart-discount">
     <details
       class="details discount-details"
-      {% if discount_codes.size > 0 %}
-        open
-      {% endif %}
+      id="discount-details"
       declarative-open
     >
       <summary class="cart-discount__summary">
@@ -54,28 +52,8 @@
           </small>
         </div>
         <ul class="cart-discount__codes">
-          {% for discount_code in discount_codes %}
-            <li
-              class="cart-discount__pill"
-              data-discount-code="{{ discount_code }}"
-              aria-label="{{ 'general.discount_applied' | t: code: discount_code }}"
-            >
-              <p class="cart-discount__pill-code">
-                {{ discount_code }}
-              </p>
-              <button
-                type="button"
-                on:click="/removeDiscount"
-                class="cart-discount__pill-remove svg-wrapper svg-wrapper--smaller button-unstyled"
-                aria-label="{{ 'general.remove_discount' | t: code: discount_code }}"
-              >
-                {% render 'icon-filters-close' %}
-              </button>
-            </li>
-          {% endfor %}
         </ul>
       </div>
     </details>
   </accordion-custom>
 </cart-discount-component>
-<script src="{{ 'cart-discount.js' | asset_url }}" defer="defer"></script>
