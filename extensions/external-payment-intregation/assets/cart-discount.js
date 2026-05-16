@@ -81,7 +81,7 @@ class CartDiscountComponent extends HTMLElement {
         id: 'main-cart-footer',
         section: document.getElementById('main-cart-footer')?.dataset.id,
         selector: mql.matches ? '.order-summary.large-up-hide' : '.order-summary.small-hide.medium-hide',
-      },
+      }
     ];
   }
 
@@ -143,6 +143,7 @@ class CartDiscountComponent extends HTMLElement {
         if (html) this.morphSection(id, html, selector);
       });
       window.updateShippingValues();
+      window.syncFormSummaryAfterDiscount();
     } catch (e) {
       // Handle error
     } finally {
@@ -198,6 +199,7 @@ class CartDiscountComponent extends HTMLElement {
         if (html) this.morphSection(id, html, selector);
       });
       window.updateShippingValues();
+      window.syncFormSummaryAfterDiscount();
     } catch (e) {
       // Handle fetch error
     } finally {
