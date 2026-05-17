@@ -4,29 +4,26 @@
     // ─── Web Component Lifecycle ──────────────────────────────────────────────
 
     connectedCallback() {
-      this.appUrl        = this.dataset.appUrl;
+      this.appUrl     = this.dataset.appUrl;
       this.shopDomain = this.dataset.shop;
-      
+
       // Shorthand DOM helper
       this.$ = (id) => document.getElementById(id);
 
       // Cart & shipping state
-      this.cartData             = null;
-      this.selectedRate         = null;
-      this.weightRates          = {};
+      this.cartData              = null;
+      this.selectedRate          = null;
+      this.weightRates           = {};
       this.cachedShippingDetails = null;
-      this.selectedDivision     = null;
+      this.selectedDivision      = null;
 
-      // Discount state (kept for legacy applyDiscount() path)
-      this.discountCode    = null;
-      this.discountAmount  = 0;
-      this.discountApplied = false;
+      // Discount state
       this.discountElement = this.querySelector("cart-discount-component");
 
       // Internal timers / observers
-      this._cartSyncTimer  = null;
-      this._cartObserver = null;
-      
+      this._cartSyncTimer = null;
+      this._cartObserver  = null;
+
       // Payment Options
       this.paymentOptionsElement = this.querySelector("checkout-form-payment-options");
 
@@ -53,7 +50,6 @@
     // ─── Event Binding ────────────────────────────────────────────────────────
 
     _bindEvents() {
-      // Division select — triggers shipping rate calculation
       const divisionSelect = this.$("division");
       if (!divisionSelect) {
         console.warn("[CheckoutBkashForm] #division not found");
@@ -64,14 +60,12 @@
         this._onDivisionChange();
       });
 
-      // Form submit
       const form = document.querySelector("#checkoutForm");
       if (!form) return;
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-
         await this._onFormSubmit(form);
       });
     }
@@ -100,13 +94,11 @@
         const saved = localStorage.getItem(`cart-${token}`);
 
         if (saved) {
-          // Show error text
           const errorText = errorMessage
             ? decodeURI(errorMessage)
             : window.cartError?.[error] ?? "Something went wrong. Please try again.";
           this._showBanner(errorText, "error");
 
-          // Restore form fields
           const data = JSON.parse(saved);
           const form = document.querySelector("#checkoutForm");
           if (data && form) {
@@ -124,18 +116,6 @@
             setVal("division",  data.division);
             setVal("country",   data.country);
 
-            // Restore shipping radio — match by value == saved rate
-            // if (data.shipping_method?.rate != null) {
-            //   const shippingInput = document.querySelector(
-            //     `input[name="shippingMethod"][value="${data.shipping_method.rate}"]`
-            //   );
-            //   if (shippingInput) {
-            //     shippingInput.checked = true;
-            //     this._updateShippingValues();
-            //   }
-            // }
-
-            // Restore payment plan radio — match by value == pay_type
             if (data.payment_details?.need_to_pay) {
               const paymentInput = document.querySelector(
                 `input[name="nova_payment_plan"][value="${data.payment_details.need_to_pay}"]`
@@ -144,100 +124,13 @@
             }
           }
         } else {
-          // Invalid token — clean URL
           const newUrl = window.location.pathname;
           window.history.replaceState({}, document.title, newUrl);
         }
       }
 
-      if (spinner) {
-        spinner.classList.add("hidden");
-      }
+      if (spinner) spinner.classList.add("hidden");
     }
-
-    // Called by: shipping radio change, showCartErrorFromURL, cart-discount.js
-    // _updateShippingValues = () => {
-    //   const namedRate   = this.selectedRate?.price ?? 0;
-    //   const shippingRate = namedRate;
-
-    //   const subtotalCents = parseInt(
-    //     this.$("subtotal")?.dataset?.subTotal ??
-    //     this.$("subtotal-mobile")?.dataset?.subTotal ?? 0,
-    //     10
-    //   );
-    //   const discountCents = parseInt(
-    //     document.querySelector("[data-discount]")?.dataset?.discount ?? 0,
-    //     10
-    //   );
-
-    //   const subtotalMoney = (subtotalCents / 100).toFixed(2);
-    //   const shippingMoney = shippingRate.toFixed(2);
-    //   const totalMoney    = Math.max(
-    //     0,
-    //     (subtotalCents / 100) + shippingRate - (discountCents / 100)
-    //   ).toFixed(2);
-
-    //   // Update both desktop and mobile summary spans
-    //   const updates = {
-    //     "subtotal":            subtotalMoney,
-    //     "subtotal-mobile":     subtotalMoney,
-    //     "shippingCost":        shippingMoney,
-    //     "shippingCost-mobile": shippingMoney,
-    //     "total":               totalMoney,
-    //     "total-mobile":        totalMoney,
-    //   };
-    //   Object.entries(updates).forEach(([id, value]) => {
-    //     const el = this.$(id);
-    //     if (el) el.textContent = value;
-    //   });
-    // };
-
-    // Called by: cart-discount.js after apply / remove
-    _syncFormSummaryAfterDiscount = async () => {
-      try {
-        const cart = await fetch("/cart.js").then(r => r.json());
-
-        const subtotalCents = cart.original_total_price;
-        const totalCents = cart.total_price;
-        const discountCents = cart.total_discount;
-
-        // Update subtotal data attributes + text (both layouts)
-        ["subtotal", "subtotal-mobile"].forEach(id => {
-          const el = this.$(id);
-          if (!el) return;
-          el.dataset.subTotal = subtotalCents;
-          el.textContent = (subtotalCents / 100).toFixed(2);
-        });
-
-        ["total", "total-mobile"].forEach(id => {
-          const el = this.$(id);
-          if (!el) return;
-          el.dataset.subTotal = totalCents;
-          el.textContent = (totalCents / 100).toFixed(2);
-        });
-
-        // Update discount row visibility + value (both layouts)
-        ["discountRow", "discountRow-mobile"].forEach(id => {
-          const row = this.$(id);
-          if (!row) return;
-          if (discountCents > 0) {
-            row.classList.remove("hidden");
-            const valueEl = row.querySelector("[data-discount]");
-            if (valueEl) {
-              valueEl.dataset.discount = discountCents;
-              valueEl.textContent = `-${(discountCents / 100).toFixed(2)}`;
-            }
-          } else {
-            row.classList.add("hidden");
-          }
-        });
-
-        // Recalculate total with current shipping then update all spans
-        // this._updateShippingValues();
-      } catch (err) {
-        console.error("[CheckoutBkashForm] syncFormSummaryAfterDiscount failed:", err);
-      }
-    };
 
     // ─── Cookie Helpers ───────────────────────────────────────────────────────
 
@@ -270,8 +163,15 @@
 
     async _loadCart() {
       this.cartData = await this._getCartItems();
+      this._refreshUI();
+    }
+
+    // ─── UI Refresh ───────────────────────────────────────────────────────────
+
+    // Single entry point to keep summary + payment amounts in sync.
+    // Always call this after cartData or selectedRate changes.
+    _refreshUI() {
       this._updateSummary();
-      // Update payment option amounts
       this.paymentOptionsElement._renderPaymentAmounts();
     }
 
@@ -292,10 +192,9 @@
 
       const formData = new FormData(form);
 
-      // Always get the most recent cart state
+      // Always fetch the latest cart state at submit time to avoid stale totals
       const cart = await fetch("/cart.js").then(res => res.json());
 
-      // Get selected shipping radio
       const selectedShippingInput = document.querySelector('input[name="shippingMethod"]:checked');
       const namedRatePrice        = parseFloat(selectedShippingInput?.value);
       const namedRateTitle        = selectedShippingInput?.dataset?.label;
@@ -303,15 +202,15 @@
       const order_details = {
         cart_details: cart,
         shipping_details: {
-          email:    formData.get("email"),
-          phone:    formData.get("phone"),
+          email:      formData.get("email"),
+          phone:      formData.get("phone"),
           first_name: formData.get("firstName"),
           last_name:  formData.get("lastName"),
-          address:  formData.get("address"),
-          city:     formData.get("city"),
-          zip:      formData.get("zip"),
-          division: formData.get("division"),
-          country:  formData.get("country"),
+          address:    formData.get("address"),
+          city:       formData.get("city"),
+          zip:        formData.get("zip"),
+          division:   formData.get("division"),
+          country:    formData.get("country"),
           countryCode: formData.get("country") === "bangladesh" ? "BD" : null,
           payment_details: {
             pay_type:    formData.get("checkout-form_selected-amount"),
@@ -324,7 +223,6 @@
         },
       };
 
-      // Store in localStorage keyed by cart token for error-return restore
       if (cart.token) {
         localStorage.setItem(
           `cart-${cart.token.split("?key=")[1]}`,
@@ -406,18 +304,15 @@
       const result       = await this._calculateShipping(weightRates, divisionRate);
 
       this._renderShippingResult({ ...result, division });
-
-      // window.updateShippingValues();
-      this._updateSummary();
-      // Update payment option amounts
-      this.paymentOptionsElement._renderPaymentAmounts();
+      this._refreshUI();
     }
 
     async _calculateShipping(weightRates, divisionRate) {
+      // Fetch fresh cart here — shipping cost depends on current cart contents
       const cartItems = await this._getCartItems();
 
-      let weightTotal        = 0;
-      let hasWeightProduct   = false;
+      let weightTotal         = 0;
+      let hasWeightProduct    = false;
       let hasNonWeightProduct = false;
 
       for (const item of cartItems.items) {
@@ -433,9 +328,6 @@
         }
       }
 
-      // Weighted only → weight rates only
-      // Non-weighted only → division rate only
-      // Both → weight rates + division rate
       let total = 0;
       if (hasWeightProduct)    total += weightTotal;
       if (hasNonWeightProduct) total += divisionRate;
@@ -467,14 +359,13 @@
       const warning           = shippingContainer?.querySelector(".shipping-warning");
 
       if (!division) {
-        if (warning)  warning.style.display = "block";
-        if (container) container.innerHTML  = "";
+        if (warning)   warning.style.display = "block";
+        if (container) container.innerHTML   = "";
         return;
       }
 
       if (warning) warning.style.display = "none";
 
-      // Store as the selected named rate so updateShippingValues can read it
       this.selectedRate = { price: total, title: `${division}-delivery` };
 
       container.innerHTML = `
@@ -497,7 +388,6 @@
         </label>
       `;
 
-      // Bind change event on newly rendered radio
       const radio = container.querySelector('input[name="shippingMethod"]');
       if (radio) {
         radio.addEventListener("change", () => {
@@ -505,7 +395,6 @@
             price: parseFloat(radio.value),
             title: radio.dataset.label,
           };
-          // this._updateShippingValues();
         });
       }
 
@@ -515,7 +404,6 @@
     // ─── Cart MutationObserver ────────────────────────────────────────────────
 
     _setupCartObserver() {
-      // Unified selector list from both original scripts
       const selectors = [
         "#main-cart-items",
         "#main-cart-footer",
@@ -547,84 +435,61 @@
       const divisionSelect  = this.querySelector("#division");
       const currentDivision = divisionSelect?.value;
 
-      if (this.cachedShippingDetails) {
-        if (currentDivision) {
-          this._applyShippingConfig(JSON.parse(this.cachedShippingDetails), currentDivision);
-        }
+      if (this.cachedShippingDetails && currentDivision) {
+        this._applyShippingConfig(JSON.parse(this.cachedShippingDetails), currentDivision);
       }
-    }
-
-    // ─── Discount Event Listener (legacy path) ────────────────────────────────
-
-    _listenForDiscountEvents() {
-      document.addEventListener("discount:update", (e) => {
-        const data = e.detail?.data;
-        if (!data) return;
-
-        this.cartData = {
-          ...this.cartData,
-          total_price:          data.total_price,
-          original_total_price: data.original_total_price,
-          total_discount:       data.total_discount,
-          cart_level_discount_applications: data.cart_level_discount_applications ?? [],
-          items: data.items ?? this.cartData?.items,
-        };
-
-        this.discountAmount = (data.total_discount ?? 0) / 100;
-        this._updateSummary();
-        // Update payment option amounts
-        this.paymentOptionsElement._renderPaymentAmounts();
-      });
     }
 
     // ─── Summary ──────────────────────────────────────────────────────────────
 
     _updateSummary() {
-      const subtotalMobileEl = this.$("subtotal-mobile");
+      const subtotalMobileEl  = this.$("subtotal-mobile");
       const subtotalDesktopEl = this.$("subtotal");
-      const totalMobileEl = this.$("total-mobile");
-      const totalDesktopEl = this.$("total");
-      const shippingMobileEl = this.$("shippingCost-mobile");
+      const totalMobileEl     = this.$("total-mobile");
+      const totalDesktopEl    = this.$("total");
+      const shippingMobileEl  = this.$("shippingCost-mobile");
       const shippingDesktopEl = this.$("shippingCost");
 
       const subtotal = this.cartData ? this.cartData.original_total_price / 100 : 0;
-      const shipping = (this.selectedRate?.price ?? 0);
+      const shipping = this.selectedRate?.price ?? 0;
       const discount = this.cartData ? this.cartData.total_discount / 100 : 0;
       const total    = Math.max(0, subtotal + shipping - discount);
 
-      subtotalMobileEl.textContent = `৳${subtotal.toFixed(2)}`;
+      subtotalMobileEl.textContent  = `৳${subtotal.toFixed(2)}`;
       subtotalDesktopEl.textContent = `৳${subtotal.toFixed(2)}`;
-      shippingMobileEl.textContent = shipping > 0 ? `৳${shipping.toFixed(2)}` : "৳0.00";
+      shippingMobileEl.textContent  = shipping > 0 ? `৳${shipping.toFixed(2)}` : "৳0.00";
       shippingDesktopEl.textContent = shipping > 0 ? `৳${shipping.toFixed(2)}` : "৳0.00";
-      totalMobileEl.textContent = `৳${total.toFixed(2)}`;
-      totalDesktopEl.textContent = `৳${total.toFixed(2)}`;
+      totalMobileEl.textContent     = `৳${total.toFixed(2)}`;
+      totalDesktopEl.textContent    = `৳${total.toFixed(2)}`;
 
       ["discountRow", "discountRow-mobile"].forEach(id => {
         const discountRow = this.$(id);
-        console.log(discount);
-        if (discountRow && discount > 0) {
+        if (!discountRow) return;
+        if (discount > 0) {
           discountRow.classList.remove("hidden");
           discountRow.querySelector(".cart__discount-value span").textContent = `-৳${discount.toFixed(2)}`;
+        } else {
+          discountRow.classList.add("hidden");
         }
       });
 
-      this.discountElement.renderDiscountCodeElement(this.cartData.discount_codes);
+      this.discountElement.renderDiscountCodeElement(this.cartData?.discount_codes ?? []);
     }
 
-    // ─── Return from bKash ────────────────────────────────────────────────────
-
-    _checkReturnFromBkash() {
-      const params    = new URLSearchParams(window.location.search);
-      const paymentId = params.get("payment_id");
-      const status    = params.get("payment_status");
-
-      if (paymentId && status === "failed") {
-        this._showBanner("Payment was not completed. Please try again.", "error");
-        const clean = new URL(window.location.href);
-        clean.searchParams.delete("payment_id");
-        clean.searchParams.delete("payment_status");
-        window.history.replaceState({}, "", clean.toString());
-      }
+    // Called by CartDiscountComponent after apply / remove.
+    // Receives the fresh cart data from the discount response so we don't
+    // need an extra /cart.js fetch — the data is already authoritative.
+    _syncFormSummaryAfterDiscount(cartData) {
+      this.cartData = {
+        ...this.cartData,
+        total_price:          cartData.total_price,
+        original_total_price: cartData.original_total_price,
+        total_discount:       cartData.total_discount,
+        cart_level_discount_applications: cartData.cart_level_discount_applications ?? [],
+        items:                cartData.items ?? this.cartData?.items,
+        discount_codes:       cartData.discount_codes ?? [],
+      };
+      this._refreshUI();
     }
 
     // ─── UI Helpers ───────────────────────────────────────────────────────────
@@ -648,93 +513,82 @@
     customElements.define("checkout-bkash-form", CheckoutBkashForm);
   }
 
-  // Discount Function
+  // ─── Discount Component ───────────────────────────────────────────────────
+
   class CartDiscountComponent extends HTMLElement {
-    constructor() {
-      super();
-      this.cartDiscountError = null;
-      this.activeFetch = null;
-      this.$ = (id) => document.getElementById(id);
-      this.CheckoutBkashForm = document.querySelector("checkout-bkash-form");
-
-      this.applyDiscount = this.applyDiscount.bind(this);
-      this.removeDiscount = this.removeDiscount.bind(this);
-    }
-
     connectedCallback() {
-      this.cartDiscountError = this.querySelector('[ref="cartDiscountError"]');
+      this.cartDiscountError  = this.querySelector('[ref="cartDiscountError"]');
+      this.activeFetch        = null;
+      this.$                  = (id) => document.getElementById(id);
+      // Queried here (connectedCallback) so the DOM is guaranteed to be ready
+      this.CheckoutBkashForm  = document.querySelector("checkout-bkash-form");
+
+      this.applyDiscount  = this.applyDiscount.bind(this);
+      this.removeDiscount = this.removeDiscount.bind(this);
 
       const applyBtn = this.querySelector('[on\\:click="/applyDiscount"]');
-      if (applyBtn) {
-        applyBtn.addEventListener('click', this.applyDiscount);
-      }
+      if (applyBtn) applyBtn.addEventListener("click", this.applyDiscount);
 
       this.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
-        btn.addEventListener('click', this.removeDiscount);
+        btn.addEventListener("click", this.removeDiscount);
       });
     }
 
     disconnectedCallback() {
       const applyBtn = this.querySelector('[on\\:click="/applyDiscount"]');
-      if (applyBtn) {
-        applyBtn.removeEventListener('click', this.applyDiscount);
-      }
+      if (applyBtn) applyBtn.removeEventListener("click", this.applyDiscount);
 
       this.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
-        btn.removeEventListener('click', this.removeDiscount);
+        btn.removeEventListener("click", this.removeDiscount);
       });
     }
 
     createAbortController() {
-      if (this.activeFetch) {
-        this.activeFetch.abort();
-      }
+      if (this.activeFetch) this.activeFetch.abort();
       const controller = new AbortController();
       this.activeFetch = controller;
       return controller;
     }
 
     existingDiscounts() {
-      return Array.from(this.querySelectorAll('.cart-discount__pill'))
+      return Array.from(this.querySelectorAll(".cart-discount__pill"))
         .map(pill => pill.dataset.discountCode)
         .filter(Boolean);
     }
 
     showAllSpinners() {
-      document.querySelectorAll('.order-summary .loading__spinner').forEach(spinner => {
-        spinner.classList.remove('hidden');
-      });
+      document.querySelectorAll(".order-summary .loading__spinner").forEach(s => s.classList.remove("hidden"));
     }
 
     hideAllSpinners() {
-      document.querySelectorAll('.order-summary .loading__spinner').forEach(spinner => {
-        spinner.classList.add('hidden');
-      });
+      document.querySelectorAll(".order-summary .loading__spinner").forEach(s => s.classList.add("hidden"));
     }
 
     getSectionsToRender() {
-      const mql = window.matchMedia('(max-width: 989px)');
+      const mql = window.matchMedia("(max-width: 989px)");
       return [
         {
-          id: 'main-cart-items',
-          section: document.getElementById('main-cart-items').dataset.id,
-          selector: '.js-contents',
+          id: "main-cart-items",
+          section: document.getElementById("main-cart-items").dataset.id,
+          selector: ".js-contents",
         },
         {
-          id: 'cart-icon-bubble',
-          section: 'cart-icon-bubble',
-          selector: '.shopify-section',
+          id: "cart-icon-bubble",
+          section: "cart-icon-bubble",
+          selector: ".shopify-section",
         },
         {
-          id: 'cart-live-region-text',
-          section: 'cart-live-region-text',
-          selector: '.shopify-section',
+          id: "cart-live-region-text",
+          section: "cart-live-region-text",
+          selector: ".shopify-section",
         },
         {
-          id: 'main-cart-footer',
-          section: document.getElementById('main-cart-footer')?.dataset.id,
-          selector: mql.matches ? '.order-summary.large-up-hide' : '.order-summary.small-hide.medium-hide',
-        }
+          id: "main-cart-footer",
+          section: document.getElementById("main-cart-footer")?.dataset.id,
+          selector: mql.matches
+            ? ".order-summary.large-up-hide"
+            : ".order-summary.small-hide.medium-hide",
+        },
       ];
     }
 
@@ -742,13 +596,13 @@
       event.preventDefault();
       event.stopPropagation();
 
-      const input = this.querySelector('input[name="discount"]');
+      const input     = this.querySelector('input[name="discount"]');
       const sectionId = this.dataset.sectionId;
-      const code = input?.value?.trim();
+      const code      = input?.value?.trim();
 
       if (!input || !sectionId || !code) {
         this.handleDiscountError({});
-        this.querySelector(".cart-discount__error-text").innerHTML = 'Discount Code Required';
+        this.querySelector(".cart-discount__error-text").innerHTML = "Discount Code Required";
         return;
       }
 
@@ -758,18 +612,15 @@
       if (existing.includes(code)) return;
 
       existing.push(code);
-      const sections = this.getSectionsToRender();
-      const abortController = this.createAbortController();
+      const sections         = this.getSectionsToRender();
+      const abortController  = this.createAbortController();
 
       try {
         const response = await fetch(window.routes.cart_update_url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({
-            discount: existing.join(','),
+            discount: existing.join(","),
             sections: sections.map(s => s.section),
           }),
           signal: abortController.signal,
@@ -777,26 +628,20 @@
 
         const data = await response.json();
 
-        const failed = data.discount_codes.find(
-          d => d.code === code && d.applicable === false
-        );
+        const failed = data.discount_codes.find(d => d.code === code && d.applicable === false);
         if (failed) {
           this.handleDiscountError(failed);
           return;
         }
-
-        document.dispatchEvent(
-          new CustomEvent('discount:update', {
-            detail: { data, origin: this.id },
-          })
-        );
 
         sections.forEach(({ id, section, selector }) => {
           const html = data.sections?.[section];
           if (html) this.morphSection(id, html, selector);
         });
         this.renderDiscountCodeElement(data.discount_codes);
-        this.CheckoutBkashForm._syncFormSummaryAfterDiscount();
+
+        // Pass the fresh cart payload — no extra /cart.js fetch needed
+        this.CheckoutBkashForm._syncFormSummaryAfterDiscount(data);
       } catch (e) {
         // Handle error
       } finally {
@@ -810,30 +655,27 @@
       event.stopPropagation();
       this.showAllSpinners();
 
-      const button = event.target.closest('button');
+      const button    = event.target.closest("button");
       const sectionId = this.dataset.sectionId;
-      const pill = button?.closest('.cart-discount__pill');
-      const code = pill?.dataset.discountCode;
+      const pill      = button?.closest(".cart-discount__pill");
+      const code      = pill?.dataset.discountCode;
 
       if (!button || !pill || !code || !sectionId) return;
 
       const existing = this.existingDiscounts();
-      const index = existing.indexOf(code);
+      const index    = existing.indexOf(code);
       if (index === -1) return;
 
       existing.splice(index, 1);
-      const sections = this.getSectionsToRender();
+      const sections        = this.getSectionsToRender();
       const abortController = this.createAbortController();
 
       try {
         const response = await fetch(window.routes.cart_update_url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({
-            discount: existing.join(','),
+            discount: existing.join(","),
             sections: sections.map(s => s.section),
           }),
           signal: abortController.signal,
@@ -841,18 +683,14 @@
 
         const data = await response.json();
 
-        document.dispatchEvent(
-          new CustomEvent('discount:update', {
-            detail: { data, origin: this.id },
-          })
-        );
-
         sections.forEach(({ id, section, selector }) => {
           const html = data.sections?.[section];
           if (html) this.morphSection(id, html, selector);
         });
         this.renderDiscountCodeElement(data.discount_codes);
-        this.CheckoutBkashForm._syncFormSummaryAfterDiscount();
+
+        // Pass the fresh cart payload — no extra /cart.js fetch needed
+        this.CheckoutBkashForm._syncFormSummaryAfterDiscount(data);
       } catch (e) {
         // Handle fetch error
       } finally {
@@ -863,31 +701,29 @@
 
     handleDiscountError(discountCode) {
       if (this.cartDiscountError) {
-        this.cartDiscountError.classList.remove('hidden');
+        this.cartDiscountError.classList.remove("hidden");
         this.cartDiscountError.querySelector(".failed-discount-code").innerHTML = discountCode?.code;
       }
     }
 
     morphSection(id, html, selector) {
-      const dom = new DOMParser().parseFromString(html, 'text/html');
+      const dom        = new DOMParser().parseFromString(html, "text/html");
       const newContent = dom.querySelector(selector);
-      const target = document.querySelector(`#${id} ${selector}`);
-      if (newContent && target) {
-        target.innerHTML = newContent.innerHTML;
-      }
+      const target     = document.querySelector(`#${id} ${selector}`);
+      if (newContent && target) target.innerHTML = newContent.innerHTML;
     }
 
     renderDiscountCodeElement(codes) {
-      const ul = this.querySelector('ul.cart-discount__codes');
+      const ul = this.querySelector("ul.cart-discount__codes");
       if (!ul) return;
       ul.innerHTML = "";
-      if (codes.length < 1) return;
+      if (!codes?.length) return;
 
       codes.forEach(code => {
-        const li = document.createElement('li');
-        li.className = 'cart-discount__pill';
-        li.dataset.discountCode = code;
-        li.setAttribute('aria-label', `Discount applied: ${code.code}`);
+        const li = document.createElement("li");
+        li.className          = "cart-discount__pill";
+        li.dataset.discountCode = code.code;
+        li.setAttribute("aria-label", `Discount applied: ${code.code}`);
 
         li.innerHTML = `
           <p class="cart-discount__pill-code">${code.code}</p>
@@ -910,31 +746,28 @@
         this.$("discount-details").open = true;
       });
 
-      this.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
-        btn.addEventListener('click', this.removeDiscount);
+      // Bind only to newly created buttons inside the freshly rendered list
+      ul.querySelectorAll('[on\\:click="/removeDiscount"]').forEach(btn => {
+        btn.addEventListener("click", this.removeDiscount);
       });
     }
   }
 
-  if (!customElements.get('cart-discount-component')) {
-    customElements.define('cart-discount-component', CartDiscountComponent);
+  if (!customElements.get("cart-discount-component")) {
+    customElements.define("cart-discount-component", CartDiscountComponent);
   }
+
+  // ─── Payment Options Component ────────────────────────────────────────────
 
   class CheckoutFormPaymentOptions extends HTMLElement {
 
-    // ─── Web Component Lifecycle ──────────────────────────────────────────────
-
     connectedCallback() {
-      // Cart total in smallest currency unit → convert to full units
-      this.currencySymbol = this.dataset.currency || "৳";
+      this.currencySymbol    = this.dataset.currency || "৳";
+      this.CheckoutBkashForm = document.querySelector("checkout-bkash-form");
 
       this._bindEvents();
       this._renderPaymentAmounts();
-
-      this.CheckoutBkashForm = document.querySelector("checkout-bkash-form");
     }
-
-    // ─── Event Binding ────────────────────────────────────────────────────────
 
     _bindEvents() {
       this.addEventListener("change", (e) => {
@@ -943,25 +776,26 @@
       });
     }
 
-    // ─── Amount Calculation ───────────────────────────────────────────────────
-
+    // Reads amounts from the authoritative in-memory state on CheckoutBkashForm
+    // rather than parsing DOM text — avoids currency-symbol brittle splits.
     _getAmountForInput(input) {
-      if (input.value == "pay_delivery") {
-        const totalShippingAmount = document.querySelector(".order-summary #shippingCost").innerText.split("৳")[1];
-        return Number(totalShippingAmount);
-      } else {
-        const totalCartAmount = document.querySelector(".order-summary #total").innerText.split("৳")[1];
-        const multiplier = parseFloat(input.dataset.multiplier ?? 0);
-        const amountToPay = Number(totalCartAmount) * multiplier;
-        return Number(amountToPay);
+      const form = this.CheckoutBkashForm;
+
+      if (input.value === "pay_delivery") {
+        return form?.selectedRate?.price ?? 0;
       }
+
+      const subtotal = form?.cartData ? form.cartData.original_total_price / 100 : 0;
+      const shipping = form?.selectedRate?.price ?? 0;
+      const discount = form?.cartData ? form.cartData.total_discount / 100 : 0;
+      const total    = Math.max(0, subtotal + shipping - discount);
+      const multiplier = parseFloat(input.dataset.multiplier ?? 0);
+      return total * multiplier;
     }
 
     _formatAmount(amount) {
       return `${this.currencySymbol}${Math.round(amount)}`;
     }
-
-    // ─── DOM Updates ──────────────────────────────────────────────────────────
 
     _renderPaymentAmounts() {
       this.querySelectorAll(".checkout-form_payment-option__input").forEach((input) => {
@@ -974,10 +808,7 @@
         const amount = this._getAmountForInput(input);
         amountEl.textContent = this._formatAmount(amount);
 
-        // Keep hidden fields in sync with whichever option is currently checked
-        if (input.checked) {
-          this._syncHiddenFields(input);
-        }
+        if (input.checked) this._syncHiddenFields(input);
       });
     }
 
