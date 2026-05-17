@@ -31,3 +31,4 @@ shopify.app.toml
 .react-router/
 mcp.json
 .gemini/extensions/shopify-dev-mcp/gemini-extension.json
+test-concurrent.sh

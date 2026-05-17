@@ -4,6 +4,7 @@ import { paymentQueue } from "../queues/index.js";
 import { createPayment } from "./bkash.service.js";
 import { validateDiscount } from "./discount.service.js";
 import { getShippingConfig, calculateShipping } from "./shipping.service.js";
+import { shopifyQueue } from "../queues/index.js";
 
 const PAYMENT_TTL_MS = 30 * 60 * 1000;
 
@@ -83,7 +84,7 @@ export async function initiatePayment({
     where: {
       shopDomain,
       status: "PENDING",
-      createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) },
+      createdAt: { gte: new Date(Date.now() - 1 * 60 * 1000) },
       customerInfo: { path: ["phone"], equals: customerInfo.phone },
     },
   });
@@ -93,7 +94,9 @@ export async function initiatePayment({
   }
 
   // One Shopify API call — price for subtotal verification + weight for shipping
-  const variantMap = await fetchVariantData({ shopDomain, accessToken, lineItems });
+  const variantMap = await shopifyQueue.enqueue(shopDomain, () =>
+    fetchVariantData({ shopDomain, accessToken, lineItems })
+  );
 
   let subtotal = 0;
   const lineItemsWithKg = lineItems.map(item => {
@@ -114,7 +117,7 @@ export async function initiatePayment({
   let shippingPrice = 0;
 
   if (shippingRate) {
-    const config = await getShippingConfig({ shopDomain, accessToken, noCache: true });
+    const config = await getShippingConfig({ shopDomain, accessToken, noCache: false });
     const result = calculateShipping({
       config,
       lineItemsWithKg,
@@ -129,12 +132,14 @@ export async function initiatePayment({
   let discountAmount = 0;
   let discountValid = false;
   if (discountCode) {
-    const result = await validateDiscount({
-      shopDomain,
-      code: discountCode,
-      cartSubtotal: subtotal,
-      accessToken,
-    });
+    const result = await shopifyQueue.enqueue(shopDomain, () =>
+      validateDiscount({
+        shopDomain,
+        code: discountCode,
+        cartSubtotal: subtotal,
+        accessToken,
+      })
+    );
     if (!result.valid) {
       throw Object.assign(new Error(result.reason), { code: "INVALID_DISCOUNT" });
     }
@@ -153,7 +158,7 @@ export async function initiatePayment({
     createPayment({
       shopDomain,
       amount: chargedAmount,
-      merchantInvoiceNumber: idempotencyKey.slice(0, 55),
+      merchantInvoiceNumber: idempotencyKey.slice(0, 15),
     })
   );
 

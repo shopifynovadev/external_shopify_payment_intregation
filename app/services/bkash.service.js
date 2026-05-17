@@ -5,6 +5,9 @@ import { decrypt } from "../utils/crypto.js";
 const tokenCache = new Map();
 // { token: string, expiresAt: Date }
 
+// In-flight grant promises — prevents duplicate token grants under concurrent load
+const grantInFlight = new Map();
+
 async function getCredentials(shopDomain) {
   const settings = await prisma.merchantSettings.findUnique({
     where: { shopDomain },
@@ -37,6 +40,7 @@ async function getCredentials(shopDomain) {
 }
 
 async function grantToken(shopDomain) {
+  console.log(`[bKash token] GRANT called for ${shopDomain}`);
   const creds = await getCredentials(shopDomain);
 
   const res = await fetch(`${creds.baseUrl}/tokenized/checkout/token/grant`, {
@@ -66,16 +70,25 @@ async function grantToken(shopDomain) {
   // bKash tokens expire in 3600 seconds; refresh 5 min early
   const expiresAt = new Date(Date.now() + (data.expires_in - 300) * 1000);
   tokenCache.set(shopDomain, { token: data.id_token, expiresAt });
+  console.log(`[bKash token] STORED for ${shopDomain} | expires: ${expiresAt.toISOString()}`);
 
   return data.id_token;
 }
 
 async function getToken(shopDomain) {
   const cached = tokenCache.get(shopDomain);
+  console.log(`[bKash token] ${cached ? "HIT " : "MISS"} for ${shopDomain}`);
   if (cached && cached.expiresAt > new Date()) {
     return cached.token;
   }
-  return grantToken(shopDomain);
+
+  if (grantInFlight.has(shopDomain)) {
+    return grantInFlight.get(shopDomain);
+  }
+
+  const promise = grantToken(shopDomain).finally(() => grantInFlight.delete(shopDomain));
+  grantInFlight.set(shopDomain, promise);
+  return promise;
 }
 
 async function bkashRequest(shopDomain, path, body) {

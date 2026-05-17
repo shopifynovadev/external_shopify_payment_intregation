@@ -1,6 +1,13 @@
 import prisma from "../db.server.js";
 import { initiatePayment } from "../services/payment.service.js";
 import { CORS_HEADERS, corsPrelight } from "../utils/cors.js";
+import { checkRateLimit, getClientIp } from "../utils/rateLimit.js";
+import { shopifyQueue } from "../queues/index.js";
+
+// Max items waiting in shopifyQueue per shop before fast-failing with 429.
+// At 2 req/s default: depth 50 = ~25s max wait, well within Heroku's 30s limit.
+// Raise via SHOPIFY_QUEUE_MAX_DEPTH if you increase SHOPIFY_QUEUE_INTERVAL_MS.
+const MAX_QUEUE_DEPTH = parseInt(process.env.SHOPIFY_QUEUE_MAX_DEPTH ?? "50");
 
 export async function loader({ request }) {
   if (request.method === "OPTIONS") return corsPrelight();
@@ -11,6 +18,16 @@ export async function action({ request }) {
   if (request.method === "OPTIONS") return corsPrelight();
   if (request.method !== "POST") {
     return Response.json({ success: false, error: "Method not allowed" }, { status: 405, headers: CORS_HEADERS });
+  }
+
+  // IP rate limit — before any DB or queue work
+  const ip = getClientIp(request);
+  const rateLimit = checkRateLimit(ip);
+  if (rateLimit.limited) {
+    return Response.json(
+      { success: false, error: "Too many requests", code: "RATE_LIMITED" },
+      { status: 429, headers: { ...CORS_HEADERS, "Retry-After": String(rateLimit.retryAfter) } }
+    );
   }
 
   let body;
@@ -28,6 +45,14 @@ export async function action({ request }) {
 
   if (!/^[a-zA-Z0-9-]+\.myshopify\.com$/.test(shopDomain)) {
     return Response.json({ success: false, error: "Invalid shop domain" }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  // Queue depth check — fast-fail before any DB work if server is saturated
+  if (shopifyQueue.size(shopDomain) > MAX_QUEUE_DEPTH) {
+    return Response.json(
+      { success: false, error: "Server busy, please try again shortly", code: "QUEUE_FULL" },
+      { status: 429, headers: CORS_HEADERS }
+    );
   }
 
   if (!customerInfo.name || !customerInfo.phone || !customerInfo.address?.division || !customerInfo.address?.district) {
