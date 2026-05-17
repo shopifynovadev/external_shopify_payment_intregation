@@ -333,7 +333,7 @@
       }
 
       try {
-        const res = await fetch(`${this.appUrl}/api/bkash/payment/create`, {
+        const res = await fetch(`${this.appUrl}/api/payment/initiate`, {
           method: "POST",
           headers: {
             accept: "application/json",
@@ -541,42 +541,16 @@
     }
 
     async _syncCartFromTheme() {
-      try {
-        const cart = await fetch("/cart.js").then(r => r.json());
+      this._loadCart();
+      this.cachedShippingDetails = this._getCookie("nova_sc");
 
-        // Update cartData
-        this.cartData = cart;
+      const divisionSelect  = this.querySelector("#division");
+      const currentDivision = divisionSelect?.value;
 
-        if (cart.item_count === 0) {
-          this._showBanner("Your cart is empty.", "info");
-          const btn = this.$("payWithBkash");
-          if (btn) btn.disabled = true;
+      if (this.cachedShippingDetails) {
+        if (currentDivision) {
+          this._applyShippingConfig(JSON.parse(this.cachedShippingDetails), currentDivision);
         }
-
-        // Update subtotal data attributes so updateShippingValues reads fresh values
-        document.querySelectorAll('[id^="subtotal"]').forEach(el => {
-          el.dataset.subTotal = cart.original_total_price;
-          el.textContent = (cart.original_total_price / 100).toFixed(2);
-        });
-
-        document.querySelectorAll("[data-discount]").forEach(el => {
-          el.dataset.discount = cart.total_discount;
-          if (cart.total_discount > 0) {
-            el.textContent = `-${(cart.total_discount / 100).toFixed(2)}`;
-          }
-        });
-
-        // Recalculate shipping with updated cart then refresh summary
-        if (this.cachedShippingDetails && this.selectedDivision) {
-          await this._applyShippingConfig(
-            JSON.parse(this.cachedShippingDetails),
-            this.selectedDivision
-          );
-        } else {
-          // this._updateShippingValues();
-        }
-      } catch {
-        // Silent fail — values stay as last known state
       }
     }
 
@@ -972,7 +946,6 @@
     // ─── Amount Calculation ───────────────────────────────────────────────────
 
     _getAmountForInput(input) {
-      console.log(input.value);
       if (input.value == "pay_delivery") {
         const totalShippingAmount = document.querySelector(".order-summary #shippingCost").innerText.split("৳")[1];
         return Number(totalShippingAmount);
@@ -999,7 +972,6 @@
         if (!amountEl) return;
 
         const amount = this._getAmountForInput(input);
-        console.log(amount);
         amountEl.textContent = this._formatAmount(amount);
 
         // Keep hidden fields in sync with whichever option is currently checked
