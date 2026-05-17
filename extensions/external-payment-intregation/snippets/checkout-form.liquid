@@ -1,6 +1,6 @@
 {{ 'checkout-form.css' | asset_url | stylesheet_tag }}
 {{ 'component-cart-discount.css' | asset_url | stylesheet_tag }}
-<script src="{{ 'cart-payment.js' | asset_url }}" defer></script>
+<script src="{{ 'cart-payment.min.js' | asset_url }}" defer></script>
 
 {% liquid
   assign app_url = shop.metafields.nova_bkash.app_url.value
