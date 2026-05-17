@@ -14,7 +14,7 @@
   {% comment %} No options enabled — render nothing {% endcomment %}
 {%- else -%}
 
-<div
+<checkout-form-payment-options
   class="checkout-form_payment-options"
   data-block-id="{{ block.id }}"
   data-currency="{{ cart.currency.symbol }}"
@@ -113,10 +113,7 @@
           </span>
           <span class="checkout-form_payment-option__text">
             <span class="checkout-form_payment-option__title">{{ block.settings.delivery_only_label }}</span>
-            <span class="checkout-form_payment-option__amount" data-amount>
-              {%- assign delivery_amount = cart.total_price | divided_by: 100.0 -%}
-              {{ cart.currency.symbol }}{{ delivery_amount | times: 0 | round: 0 }}
-            </span>
+            <span class="checkout-form_payment-option__amount" data-amount></span>
           </span>
         </span>
       </label>
@@ -124,98 +121,10 @@
 
   </div>
 
-  {%- comment %} Hidden input consumed by cart-block's payment initiation logic {%- endcomment %}
-  <input type="hidden" id="checkout-form_selected-plan" name="checkout-form_selected-plan" value="">
+  {%- comment %} Hidden inputs consumed by cart-block's payment initiation logic {%- endcomment %}
+  <input type="hidden" id="checkout-form_selected-plan" name="checkout-form_selected-plan"   value="">
   <input type="hidden" id="checkout-form_selected-amount" name="checkout-form_selected-amount" value="">
-</div>
 
-<script>
-(function () {
-  var block = document.querySelector('[data-block-id="{{ block.id }}"]');
-  if (!block) return;
-
-  // Cart total in smallest currency unit (paisa/poisha) → convert to full units
-  var cartTotalRaw = {{ cart.total_price }};
-  var cartTotal = cartTotalRaw / 100;
-
-  // Shipping cost as a variable — will be updated by cart-block's shipping selection
-  // cart-block should call window.novaPaymentOptions.setShipping(amount) when a rate is selected
-  var shippingCost = 0;
-
-  var currencySymbol = block.dataset.currency || '৳';
-
-  function formatAmount(amount) {
-    return currencySymbol + Math.round(amount);
-  }
-
-  function updateAmounts() {
-    var options = block.querySelectorAll('.checkout-form_payment-option__input');
-    options.forEach(function (input) {
-      var multiplier = parseFloat(input.dataset.multiplier);
-      var amountEl = input.closest('.checkout-form_payment-option').querySelector('[data-amount]');
-      var amount;
-
-      if (multiplier === 0) {
-        // Delivery only — show shipping cost
-        amount = shippingCost;
-      } else {
-        // Percentage of cart total + full shipping always added on top
-        amount = (cartTotal * multiplier) + shippingCost;
-      }
-
-      amountEl.textContent = formatAmount(amount);
-
-      // Keep hidden fields in sync with selected option
-      if (input.checked) {
-        syncHiddenFields(input, amount);
-      }
-    });
-  }
-
-  function syncHiddenFields(input, amount) {
-    var planInput = document.getElementById('checkout-form_selected-plan');
-    var amountInput = document.getElementById('checkout-form_selected-amount');
-    if (planInput) planInput.value = input.value;
-    if (amountInput) amountInput.value = amount.toFixed(2);
-
-    // Emit event for cart-block to listen to
-    var event = new CustomEvent('nova:paymentPlanChanged', {
-      bubbles: true,
-      detail: {
-        plan: input.value,
-        multiplier: parseFloat(input.dataset.multiplier),
-        amount: amount,
-        label: input.dataset.label
-      }
-    });
-    block.dispatchEvent(event);
-  }
-
-  // Handle selection change
-  block.addEventListener('change', function (e) {
-    if (!e.target.matches('.checkout-form_payment-option__input')) return;
-    var multiplier = parseFloat(e.target.dataset.multiplier);
-    var amount = multiplier === 0 ? shippingCost : (cartTotal * multiplier) + shippingCost;
-    syncHiddenFields(e.target, amount);
-  });
-
-  // Public API for cart-block to push updated shipping cost
-  window.novaPaymentOptions = window.novaPaymentOptions || {};
-  window.novaPaymentOptions.setShipping = function (amount) {
-    shippingCost = parseFloat(amount) || 0;
-    updateAmounts();
-  };
-  window.novaPaymentOptions.getSelected = function () {
-    var checked = block.querySelector('.checkout-form_payment-option__input:checked');
-    if (!checked) return null;
-    var multiplier = parseFloat(checked.dataset.multiplier);
-    var amount = multiplier === 0 ? shippingCost : (cartTotal * multiplier) + shippingCost;
-    return { plan: checked.value, amount: amount, label: checked.dataset.label };
-  };
-
-  // Initial render
-  updateAmounts();
-})();
-</script>
+</checkout-form-payment-options>
 
 {%- endif -%}
